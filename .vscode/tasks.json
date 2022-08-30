@@ -1,0 +1,49 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Core",
+            "type": "process",
+            "command": "roscore",
+            "detail": "Start the ros core to enable messaging.",
+            "problemMatcher": []
+        },
+        {
+            "label": "Run",
+            "type": "shell",
+            "command": "source devel/setup.bash && rosrun ${input:package} ${input:executable}",
+            "problemMatcher": [],
+            "detail": "Run an executable."
+        },
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "catkin",
+            "args": ["build"],
+            "detail": "Build all packages and source code.",
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean",
+            "detail": "Remove all build files.",
+            "type": "shell",
+            "command": "catkin clean && rm -rf .catkin_tools",
+            "problemMatcher": []
+        }
+    ],
+    "inputs": [
+        {
+            "id": "package",
+            "type": "pickString",
+            "options": [
+                "time"
+            ],
+            "description": "The name of the package of the executable?"
+        },
+        {
+            "id": "executable",
+            "type": "promptString",
+            "description": "The filename ofthe executable?"
+        }
+    ]
+}

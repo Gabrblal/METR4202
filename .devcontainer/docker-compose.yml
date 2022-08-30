@@ -1,0 +1,15 @@
+services:
+  ros:
+    platform: linux/arm64/v8
+    build: .
+    container_name: ros
+    network_mode: host
+    environment:
+      - DISPLAY=$DISPLAY
+    volumes:
+      - '/tmp/.X11-unix:/tmp/.X11-unix'
+      - '/dev:/dev'
+      - '..:/workspace'
+
+# For ubuntu:
+#   Run xhost local:docker locally to allow docker to access Xorg server.

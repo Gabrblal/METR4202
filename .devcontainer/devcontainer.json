@@ -1,0 +1,10 @@
+{
+	"dockerComposeFile": [
+		"docker-compose.yml"
+	],
+	"service": "ros",
+	"workspaceFolder": "/workspace",
+	"customizations": {
+		"vscode": {}
+	}
+}
