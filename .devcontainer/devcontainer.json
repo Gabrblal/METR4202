@@ -5,6 +5,8 @@
 	"service": "ros",
 	"workspaceFolder": "/workspace",
 	"customizations": {
-		"vscode": {}
+		"vscode": {
+			"extensions": ["ms-python.python"]
+		}
 	}
 }
