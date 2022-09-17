@@ -29,7 +29,22 @@
             "type": "shell",
             "command": "catkin clean && rm -rf .catkin_tools",
             "problemMatcher": []
-        }
+        },
+        {
+            "label": "Download Dependencies",
+            "detail": "Download dynamixel and ximea repositories.",
+            "type": "shell",
+            "options": {"cwd": "${workspaceFolder}/src"},
+            "command": "git clone https://github.com/wavelab/ximea_ros_cam.git && git clone https://github.com/UQ-METR4202/dynamixel_interface",
+            "problemMatcher": []
+        },
+        {
+            "label": "Launch",
+            "detail": "Launches the carousel system and dependencies.",
+            "type": "shell",
+            "command": "source devel/setup.bash && roslaunch carousel carousel.launch",
+            "problemMatcher": []
+        },
     ],
     "inputs": [
         {

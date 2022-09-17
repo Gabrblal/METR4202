@@ -3,6 +3,10 @@ devel/*
 logs/*
 .catkin_tools/*
 
+# Dependency packages
+src/ximea_ros_cam
+src/dynamixel_interface
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
