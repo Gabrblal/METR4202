@@ -27,3 +27,10 @@ To connect to a network type
 To disconnect from a network type
 
     sudo nmcli connection down <network_name>
+
+## Calibrating the camera
+
+The following commands calibrate the camera.
+
+    rosrun ximea_ros ximea_demo
+    rosrun camera_calibration cameracalibrator.py --size 8x6 --square 0.025 image:=/ximea_ros/ximea_31701651/image_raw camera:=/ximea_ros/ximea_31701651
