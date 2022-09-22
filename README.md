@@ -27,3 +27,16 @@ To connect to a network type
 To disconnect from a network type
 
     sudo nmcli connection down <network_name>
+
+## Calibrating the camera
+
+The following commands calibrate the camera.
+
+    rosrun ximea_ros ximea_demo
+    rosrun camera_calibration cameracalibrator.py --size 9x6 --square 0.024 image:=/ximea_ros/ximea_31701651/image_raw camera:=/ximea_ros/ximea_31701651
+
+0. Calibrate.
+1. Save calibration to /tmp folder with Save Button
+2. Copy calibration tar file into Desktop.
+3. Unzip / extract the folder.
+4. Move ost.yaml file into .ros/camera_info/ directory as ximea_SERIAL.yaml

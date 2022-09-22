@@ -43,15 +43,6 @@ class CarouselGripper:
                 between 0 and 1 inclusive."""
         pass
 
-    def _close(self, percentage = None, /):
-        """Closes the gripper to minimum contraction.
-
-        Args:
-            percentage: If not None then the percentage to close the gripper,
-                between 0 and 1 inclusive.
-        """
-        pass
-
     def _callback(self, message : Float32):
         """Callback function for commands to the gripper.
         
