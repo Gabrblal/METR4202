@@ -16,5 +16,17 @@ def inverse_kinematics(
     Returns:
         The angles of each joint to the end effector.
     """
+
+    # return list of thetas
+pass
+
+
+
+def main():
+
+    inverse_kinematics(None, None)
+
     pass
-    # return thetas
+
+if __name__ == '__main__':
+    main()
