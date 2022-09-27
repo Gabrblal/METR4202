@@ -1,4 +1,4 @@
-from numpy import ndarray
+from numpy import ndarray, asarray, eye, sin, cos
 from typing import Sequence
 
 def poe(
@@ -9,20 +9,20 @@ def poe(
         body : bool,
         decomposed : bool = True
     ):
-    """Calculate the forward kinematics product of exponentials in the space
-    frame of reference.
+    """Calculate the forward kinematics product of exponentials.
 
     Args:
         M: The initial configuration.
         twist: The sequence of twists to perform on the initial configuration.
-        theta: The angles of each twist.
+        theta: The theta values of each twist.
         body: True for the body frame or False for the space frame.
-        decomposed: True to return (R, p) or false to return T
+        decomposed: True to return a tuple of the rotation matrix and the
+            translation vector, or False to return the transformation matrix.
 
     Returns:
-        The transformation matrix of the final configuration.
+        The transformation matrix of the final configuration, or a tuple of
+        the rotation matrix and the translation vector.
     """
-    from numpy import asarray, eye, sin, cos
 
     # Choose the direction of iteration over the twists depending on if the
     # twists are in the body frame or space frame.
