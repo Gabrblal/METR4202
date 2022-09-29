@@ -3,6 +3,8 @@ from typing import Sequence, Tuple
 from scipy.interpolate import splprep, BSpline
 from numpy import ndarray, asarray, piecewise, logical_and
 
+from .trajectory import texp, tlog
+
 class Trajectory:
     """A 3D trajectory composed of spline interpolation and linearly
     interpolated rotation."""
@@ -38,6 +40,8 @@ class Trajectory:
 
         if self._R0.shape != (3, 3) or self._R1.shape != (3, 3):
             raise RuntimeError("Rotation matricies not 3x3.")
+
+        self._rotation_factor = tlog(self._R0.T @ self._R1)
 
         # Spline.
         try:
@@ -107,7 +111,7 @@ class Trajectory:
         Returns:
             The rotation matricies at the provided times.
         """
-        return None
+        return [self._R0 @ texp(self._rotation_factor * x) for x in self._s(t)]
 
     def p(self, t):
         """Evaluates the translation of the trajectory as a function of time.
@@ -133,7 +137,7 @@ class Trajectory:
         # Calculate the s curve interpolation constant.
         s = self.s(t)
 
-        R = self.R(t)
+        R = [self._R0 @ texp(self._rotation_factor * x) for x in s]
         p = self._spline(s)
 
         return R, p
@@ -167,7 +171,9 @@ class Trajectory:
         ss = axes['3d'].get_subplotspec()
         axes['3d'].remove()
         axes['3d'] = figure.add_subplot(ss, projection = '3d')
+
         axes['3d'].plot(x, y, z)
+
         axes['3d'].set_xlabel('x')
         axes['3d'].set_ylabel('y')
         axes['3d'].set_zlabel('z')
