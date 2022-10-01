@@ -1,202 +1,167 @@
-from typing import Sequence, Tuple
+#! /usr/bin/python3
 
-from scipy.interpolate import splprep, BSpline
-from numpy import ndarray, asarray, piecewise, logical_and
+import rospy as ros
+from tf.transformations import euler_matrix
 
-from .trajectory import texp, tlog
+from numpy import asarray
+from typing import Sequence
 
-class Trajectory:
-    """A 3D trajectory composed of spline interpolation and linearly
-    interpolated rotation."""
+from utility.topics import Topics, JointState, Header
+from utility.trajectory import Trajectory
+from utility.kinematics import newton_raphson
+
+# https://github.com/UQ-METR4202/metr4202_w7_prac/blob/main/scripts/joint_states_publisher.py
+
+class CarouselTrajectory:
+    """Node responsible for handling the trajectory of the end effector by
+    taking the current desired end effector configuratio
+
+    Class responsible for calculating trajectories and pose of the carousel
+    arm.
+    """
 
     def __init__(
             self,
-            control : Sequence[Tuple[float, float, float]],
-            rotation : Tuple[ndarray, ndarray],
-            start : float,
-            acceleration : float,
-            velocity : float,
-            /
+            screws,
+            M,
+            joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4')
         ):
-        """Create a new spline from the provided control points.
-
-        Required that velocity ** 2 / acceleration <= 1 in order to reach
-        the coasting velocity.
+        """Create a new carousel poser.
 
         Args:
-            control: A sequence of control points that define the spline. Must
-                be at least length 4.
-            start: The time at which to start the trajectory.
-            acceleration: The acceleration to get to the coasting velocity.
-            velocity: The coasting velocity of the trajectory.
-
+            screws: The screws of each joint.
+            M: The home configuration of the end effector.
+            joints: A sequence of strings naming each joint.
         """
-        # Rotation matricies.
-        if len(rotation) != 2:
-            raise RuntimeError("Two rotation matricies required.")
+        self._screws = screws
+        self._M = M
+        self._joint_names = joint_names
 
-        self._R0 = asarray(rotation[0])
-        self._R1 = asarray(rotation[1])
+        # Inputs are the desired end effector location and the locations of
+        # the fiducial boxes.
+        self._effector_sub = Topics.effector.subscriber(self._effector_callback)
+        self._desired_sub = Topics.effector_desired.subscriber(self._desired_callback)
+        self._box_sub = Topics.box.subscriber(self._box_callback)
 
-        if self._R0.shape != (3, 3) or self._R1.shape != (3, 3):
-            raise RuntimeError("Rotation matricies not 3x3.")
+        # Output is the positions of all the joints.
+        self._trajectory = None
+        self._joint_pub = Topics.desired_joint_states.publisher()
 
-        self._rotation_factor = tlog(self._R0.T @ self._R1)
 
-        # Spline.
-        try:
-            (tck, c, k), _ = splprep(list(zip(*control)), k = 3, s = 0)
-            self._spline = BSpline(tck, asarray(c).T, k)
-        except TypeError:
-            raise RuntimeError("Must have at least 4 control points.")
+    def _effector_callback(self):
+        """Callback for when a true end effector configuration is published."""
+        pass
 
-        # S curve parameters.
-        v = velocity
-        a = max(v ** 2, acceleration)
-        T = (acceleration + velocity**2) / (acceleration * velocity)
+    def _desired_callback(self):
+        """Callback for when a new desired end effector configuration is
+        published.`
+        """
+        pass
 
-        # Piecewise function of t.
-        self._s = lambda t: piecewise(
-            t,
-            condlist = (
-                t < 0,
-                logical_and(0 <= t, t < v / a),
-                logical_and(v / a <= t, t < T - v / a),
-                logical_and(T - v / a <= t, t <= T),
-                t > T
-            ),
-            funclist = (
-                lambda t: 0 * t,
-                lambda t: 0.5 * a * t ** 2,
-                lambda t: v * t - v ** 2 / (2 * a),
-                lambda t: (2*a*v*T - 2*v**2 - a**2*(t - T)**2) / (2*a),
-                lambda t: t / t
+    def _box_callback(self):
+        """Callback for when a new cube configuration is published."""
+        pass
+
+    def _send_joint_states(self, theta : Sequence[float]):
+        """Publishes a joint state message containing the angles of each joint.
+
+        Args:
+            theta: A sequence of joint parameters for each joint on the arm.
+        """
+        self._joint_pub.publish(
+            JointState(
+                header = Header(stamp = ros.Time.now()),
+                name = self._joint_names,
+                position = theta,
+                velocity = [0.5, 0.5, 0.5, 0.5]
             )
         )
 
-        self._start = start
-        self._velocity = v
-        self._acceleration = a
-        self._duration = T
+    def _inverse_kinematics(self, theta, guess = None):
+        if guess is None:
+            guess = asarray([0 for _ in theta])
 
-    @property
-    def velocity(self):
-        return self._velocity
+        return newton_raphson(
+            self._screws,
+            self._M,
+            theta,
+            guess
+        )
 
-    @property
-    def acceleration(self):
-        return self._acceleration
+    def main(self):
 
-    @property
-    def duration(self):
-        return self._duration
+        from math import atan2, asin, degrees
 
-    def s(self, t):
-        """Evaluates the parameterisation of the trajectory over time.
+        x0 = -100
+        x1 = 100
+        y = 200
+        z = 200
+        yaw0 = atan2(y, x0)
+        yaw1 = atan2(y, x1)
 
-        Args:
-            t: The times at which to evaluate the trajectory parameter.
+        start = ros.get_time()
+        self._trajectory = Trajectory(
+            [
+                (-100, y, z),
+                (-50, y, z),
+                (50, y, z),
+                (100, y, z)
+            ],
+            [euler_matrix(0, 0, yaw0)[:3, :3],  euler_matrix(0, 0, yaw1)[:3, :3]],
+            start,
+            50,
+            10
+        )
 
-        Returns:
-            An array or single value of the trajectory parameters.
-        """
-        return self._s(asarray(t - self._start))
-
-    def R(self, t):
-        """Evaluates the rotation of the trajectory as a function of time.
-
-        Args:
-            t: The times at which to evaluate the rotation.
-
-        Returns:
-            The rotation matricies at the provided times.
-        """
-        return [self._R0 @ texp(self._rotation_factor * x) for x in self._s(t)]
-
-    def p(self, t):
-        """Evaluates the translation of the trajectory as a function of time.
-
-        Args:
-            t: The times at which to evaluate the translation.
-
-        Returns:
-            An array of or singular position at s.
-        """
-        return self._spline(self._s(t))
-
-    def __call__(self, t):
-        """Evaluates the trajectory at the provided time.
-
-        Args:
-            t: The time in seconds to evaluate the configuration of the
-                trajectory.
-
-        Returns:
-            A tuple of (rotations, translations) at the provided times.
-        """
-        # Calculate the s curve interpolation constant.
-        s = self.s(t)
-
-        R = [self._R0 @ texp(self._rotation_factor * x) for x in s]
-        p = self._spline(s)
-
-        return R, p
-
-    def plot(self):
-        """Plots the trajectory over time against time and 3D space, and the
-        parameterisation over time.
-        """
-
-        import matplotlib.pyplot as plt
         from numpy import linspace
+        print("Trajectory:")
+        for t in linspace(start, start + self._trajectory.duration, 10):
+            T = self._trajectory.at(t)
+            print(f"angle: {degrees(asin(T[1][0]))}")
+            # print(T)
 
-        t = linspace(0, self.duration, 100)
-        s = self.s(t)
-        R, p = self(t)
-        x, y, z = list(zip(*p))
+        # from random import uniform
+        # theta = [uniform(-1.5, 1.5) for _ in self._joint_names]
 
-        figure, axes = plt.subplot_mosaic([
-                ('x', '3d'),
-                ('y', '3d'),
-                ('z', 's')
-            ]
-        )
+        theta_last = None
+        while not ros.is_shutdown():
+            desired = self._trajectory.at(ros.get_time())
+            theta = self._inverse_kinematics(desired, theta_last)
+    
+            if theta is not None:
+                theta_last = theta
+                print(theta)
+                # self._send_joint_states(theta)
 
-        for label, data in [('x', x), ('y', y), ('z', z), ('s', s)]:
-            axes[label].plot(t, data)
-            axes[label].set_xlabel('t')
-            axes[label].set_ylabel(label)
-            axes[label].set_title(f'{label.capitalize()} versus Time', fontsize = 'medium')
+def main():
+    # from numpy import concatenate, cross
+    # screw = lambda w, p: concatenate((w, -cross(w, p)))
+    # screws = asarray([
+    #     screw(asarray(w), asarray(p)) for w, p in (
+    #         ((0, 0, 1), (0, 0, 0)),
+    #         ((1, 0, 0), (0, 0, 54)),
+    #         ((1, 0, 0), (0, 0, 171)),
+    #         ((1, 0, 0), (0, 0, 265))
+    #     )
+    # ])
 
-        ss = axes['3d'].get_subplotspec()
-        axes['3d'].remove()
-        axes['3d'] = figure.add_subplot(ss, projection = '3d')
+    ros.init_node('carouselTrajectory')
 
-        axes['3d'].plot(x, y, z)
+    screws = asarray([
+       [  0,   0,   1,   0,   0,   0],
+       [  1,   0,   0,   0,  54,   0],
+       [  1,   0,   0,   0, 171,   0],
+       [  1,   0,   0,   0, 265,   0]
+    ])
+    M = asarray([
+        [1, 0, 0, 0],
+        [0, 0, -1, 12],
+        [0, 1, 0, 303],
+        [0, 0, 0, 1],
+    ])
 
-        axes['3d'].set_xlabel('x')
-        axes['3d'].set_ylabel('y')
-        axes['3d'].set_zlabel('z')
-        
-        figure.set_figwidth(8)
-        figure.set_figheight(6)
-        plt.subplots_adjust(
-            left = 0.1,
-            bottom = 0.10,
-            right = 0.90,
-            top = 0.95,
-            wspace = 0.2,
-            hspace = 0.6
-        )
-        plt.show()
+    carousel = CarouselTrajectory(screws, M)
+    carousel.main()
 
 if __name__ == '__main__':
-    from numpy import eye
-
-    trajectory = Trajectory(
-        [(0, 0, 0), (0, 1, 1), (2, -1, 0), (-1, -2, -1), (0, -2, 2), (1, 2, 1)],
-        [eye(3), eye(3)],
-        0, 10, 2
-    )
-
-    trajectory.plot()
+    main()

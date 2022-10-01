@@ -1,6 +1,6 @@
 import rospy as ros
 
-from ..topics import Topics
+from utility.topics import Topics
 
 class Carousel:
     """The carousel logic controller node.
