@@ -481,22 +481,23 @@ def test_explodes():
     from math import radians
 
     M = asarray([
-        [1, 0, 0, 2],
+        [1, 0, 0, 3],
         [0, 1, 0, 0],
         [0, 0, 1, 0],
         [0, 0, 0, 0]
     ])
     screws = asarray([
-        asarray([0, 0, 1, 0, 0, 0]).T,
-        asarray([0, 0, 1, 0, 1, 0]).T,
-        asarray([0, 0, 1, 0, 2, 0]).T
-    ])
+        asarray([0, 0, 1, 0, 0, 0]),
+        asarray([0, 0, 1, 0, 1, 0]),
+        asarray([0, 0, 1, 0, 2, 0])
+    ]).T
 
     initial_theta = asarray([0, 0, 0])
     final_theta = asarray([0, radians(10), 0])
 
-    T = FKinSpace(M, screws.T, final_theta)
-    print(IKinSpace(screws.T, M, T, initial_theta, 0.01, 0.001))
+    T = FKinSpace(M, screws, final_theta)
+    print(T)
+    print(IKinSpace(screws, M, T, initial_theta, 0.01, 0.001))
 
 if __name__ == '__main__':
     test_space_jacobian()
@@ -505,4 +506,4 @@ if __name__ == '__main__':
     test_poe_body()
     test_newton_raphson_space()
     test_newton_raphson_body()
-    # test_explodes()
+    test_explodes()
