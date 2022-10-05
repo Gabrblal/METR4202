@@ -3,7 +3,7 @@ from itertools import accumulate
 from typing import Sequence, Tuple, Union
 
 from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
-from numpy import zeros, pi, concatenate, vstack, abs
+from numpy import zeros, pi, concatenate, vstack, abs, arctan2
 from numpy.linalg import norm, pinv
 
 def mlog(R : ndarray, *, decomposed = False):
@@ -317,6 +317,54 @@ def newton_raphson(
 
     return None
 
+def inverse_kinematics(
+        end_effector_pos : list,
+        link_length : list
+    ):
+    """Calculate the joint positions from an end effector configuration.
+    
+    Args:
+        pose: The end effector configuration.
+        lengths: The lengths of each links.
+
+    Returns:
+        The angles of each joint to the end effector.
+    """
+    # Define variables (Don't exceed robot arm length)
+    # Coordinates of end-effector (cubes)
+    x = end_effector_pos[0] # x-coordinate of end-effector
+    y = end_effector_pos[1] # y-coordinate of end-effector
+    z = end_effector_pos[2] #z-coordinate of end-effector
+    #*****^^^This will be replaced by subscriber/publisher***********# 
+
+    alpha = pi/2 # angle of gripper (0 to 90), set to 90
+
+    # Dimentsions of the robot (in mm)
+    L1 = link_length[0]
+    L2 = link_length[1]
+    L3 = link_length[2]
+    L4 = link_length[3]
+
+    # Position of joint 3
+    px = x - L4*cos(alpha) #joint 3 x coordinate
+    py = y - L4*sin(alpha) #joint 3 y coordinate
+    pz = z #joint 3 z coordinate
+
+    C_theta_2 = (px**2+py**2-L1**2-L2**2)/(2*L1*L2) 
+
+    #Angle Calculations (in radians)
+    theta_1 = arctan2(y,x)
+    theta_3 = arctan2(C_theta_2,-sqrt(1-C_theta_2**2))
+    theta_2 = (arctan2(py,px)-arctan2(L1+L2*cos(theta_3),L2*sin(theta_3)))
+    theta_4 = alpha - theta_2 - theta_3
+    #Update angles
+    theta_2 = (pi/2)-theta_2
+    theta_3 = -theta_3
+
+    # Publish thetas to the robot
+    # return list of thetas
+    return [theta_1, theta_2, theta_3,theta_4]
+
 def test_space_jacobian():
     screws = asarray([
         [0, 0, 1,   0, 0.2, 0.2],
@@ -476,6 +524,31 @@ def test_newton_raphson_body():
     if not (abs(result - expected) < 1e-5).all():
         raise AssertionError(f"\n{result}\n!=\n{expected}")
 
+def test_analytical_inverse_kinematics():
+    from robot import carousel
+    from math import radians, degrees
+
+    # end_effector_pos = [150,60,70] #Change this for anything within the limit
+    # link_lengths = [75,115,95,85]
+    # inverse_kinematics(end_effector_pos, link_lengths)#This prints the angles, just for looking
+
+    theta0 = [
+        radians(0),
+        radians(45),
+        radians(45),
+        radians(45),
+    ]
+    print('theta0: ' + ', '.join([f'{round(degrees(t), 2)}' for t in theta0]))
+
+    p0 = poe(carousel.M, carousel.screws, theta0)[1]
+    print('p0: ' + ', '.join([f'{round(x, 2):2}' for x in p0]))
+
+    theta1 = inverse_kinematics(p0, carousel.L)
+    print('theta1: ' + ', '.join([f'{round(degrees(t), 2)}' for t in theta1]))
+
+    p1 = poe(carousel.M, carousel.screws, theta1)[1]
+    print('p1: ' + ', '.join([f'{round(x, 2)}' for x in p1]))
+
 def test_explodes():
     from modern_robotics import IKinSpace, FKinSpace
     from math import radians
@@ -506,4 +579,4 @@ if __name__ == '__main__':
     test_poe_body()
     test_newton_raphson_space()
     test_newton_raphson_body()
-    test_explodes()
+    test_analytical_inverse_kinematics()

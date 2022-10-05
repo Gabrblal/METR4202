@@ -2,13 +2,14 @@ from numpy import asarray, hstack, vstack, cross
 
 class Robot:
 
-    def __init__(self, w, v, M):
+    def __init__(self, w, v, M, L):
         self._screws = asarray(
             vstack(
                 [hstack([wi, -cross(wi, vi)]) for wi, vi in zip(w, v)]
             )
         )
         self._M = asarray(M)
+        self._L = L
 
     def __str__(self):
         return '\n'.join([
@@ -30,12 +31,16 @@ class Robot:
     def M(self):
         return self._M
 
+    @property
+    def L(self):
+        return self._L
+
 carousel = Robot(
     [
         (0, 0, 1),
-        (1, 0, 0),
-        (1, 0, 0),
-        (1, 0, 0)
+        (-1, 0, 0),
+        (-1, 0, 0),
+        (-1, 0, 0)
     ], [
         (0, 0, 0),
         (0, 0, 54),
@@ -46,6 +51,11 @@ carousel = Robot(
         [0, 0, -1, 12],
         [0, 1, 0, 303],
         [0, 0, 0, 1],
+    ], [
+        54,
+        117,
+        94,
+        110
     ]
 )
 
