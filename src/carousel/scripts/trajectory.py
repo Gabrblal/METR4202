@@ -1,16 +1,19 @@
 #! /usr/bin/python3
 
-import rospy as ros
-from tf.transformations import euler_matrix
-
-from numpy import asarray
+from threading import Lock
 from typing import Sequence
 
-from utility.topics import Topics, JointState, Header
-from utility.trajectory import Trajectory
-from utility.kinematics import newton_raphson
+import rospy as ros
+from tf.transformations import euler_from_quaternion
 
-# https://github.com/UQ-METR4202/metr4202_w7_prac/blob/main/scripts/joint_states_publisher.py
+from numpy import asarray, ndarray, eye
+from numpy.linalg import norm
+
+import utility.robot as robot
+from utility.topics import Topics, JointState, Header, Pose
+
+from utility.trajectory import Spline, SCurve, Linear
+from utility.kinematics import inverse_kinematics, newton_raphson
 
 class CarouselTrajectory:
     """Node responsible for handling the trajectory of the end effector by
@@ -22,9 +25,10 @@ class CarouselTrajectory:
 
     def __init__(
             self,
-            screws,
-            M,
-            joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4')
+            robot : robot.Robot,
+            joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4'),
+            method = 'numerical',
+            rate = 100
         ):
         """Create a new carousel poser.
 
@@ -33,8 +37,7 @@ class CarouselTrajectory:
             M: The home configuration of the end effector.
             joints: A sequence of strings naming each joint.
         """
-        self._screws = screws
-        self._M = M
+        self._robot = robot
         self._joint_names = joint_names
 
         # Inputs are the desired end effector location and the locations of
@@ -46,17 +49,75 @@ class CarouselTrajectory:
         # Output is the positions of all the joints.
         self._trajectory = None
         self._joint_pub = Topics.desired_joint_states.publisher()
+        self._rate = ros.Rate(rate)
 
+        # The initial desired orientation is the identity rotation extended
+        # vertically to almost the maximum.
+        self._threshold = 10
 
-    def _effector_callback(self):
+        # The desired end effector configuration (R, p).
+        self._desired = (eye(3), asarray([0, 0, sum(robot.L) - 10]))
+
+        # The current end effector configuration (R, p).
+        self._current = None
+
+        # Lock protecting concurrent data access from callbacks.
+        self._lock = Lock()
+
+        # The last theta angle sent.
+        self._last = None
+
+        if method == 'numerical':
+            self._inverse = self._inverse_numerical
+        elif method == 'random':
+            self._inverse = self._inverse_random
+        else:
+            self._inverse = self._inverse_analytical
+
+    def _effector_callback(self, message : Pose):
         """Callback for when a true end effector configuration is published."""
-        pass
+        self._lock.acquire()
 
-    def _desired_callback(self):
+        if isinstance(message, Pose):
+            q = message.orientation
+            self._current = (
+                euler_from_quaternion([q.x, q.y, q.z, q.w]),
+                asarray(message.position)
+            )
+        else:
+            ros.logwarn("CarouselTrajectory end effector not Pose.")
+
+        self._lock.release()
+
+    def _desired_callback(self, message : Pose):
         """Callback for when a new desired end effector configuration is
-        published.`
+        published.
         """
-        pass
+        self._lock.acquire()
+
+        if not isinstance(message, Pose):
+            ros.logwarn("CarouselTrajectory desired effector not Pose.")
+            self._lock.release()
+
+        # Get the new desired position of the end effector.
+        data = message.data.position
+        new = asarray((data.x, data.y, data.z))
+
+        # Get the hold desired position of the end effector.
+        old = self._desired[1]
+        current = self._current[1]
+
+        # If the change in desired position has reached the threshold, then
+        # recalculate the trajectory.
+        if not norm(new - old) < self._threshold:
+            now = ros.gettime()
+            self._trajectory = Spline(
+                [current, current, new, new],
+                Linear(now, now + norm(new - old) / 40)
+                # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
+            )
+
+        self._lock.release()
 
     def _box_callback(self):
         """Callback for when a new cube configuration is published."""
@@ -77,90 +138,87 @@ class CarouselTrajectory:
             )
         )
 
-    def _inverse_kinematics(self, theta, guess = None):
-        if guess is None:
-            guess = asarray([0 for _ in theta])
+    def _inverse_random(self, R : ndarray, p : ndarray):
+        """Get random theta values.
 
+        Args:
+            R: The rotation of the end effector.
+            p: The position of the end effector.
+
+        Returns:
+            The joint parameters of the robot joints.
+        """
+        from random import uniform
+        ros.sleep(0.5)
+        return [uniform(-1.5, 1.5) for _ in self._joint_names]
+
+    def _inverse_numerical(self, R : ndarray, p : ndarray):
+        """Get the analytical inverse kinematics.
+
+        Args:
+            R: The rotation of the end effector.
+            p: The position of the end effector.
+
+        Returns:
+            The joint parameters of the robot joints.
+        """
+        T, T[:3, :3], T[:3, 3] = eye(4), R, p
         return newton_raphson(
-            self._screws,
-            self._M,
-            theta,
-            guess
+            self.robot.screws,
+            self.self.robot.M,
+            T,
+            self._last
         )
+
+    def _inverse_analytical(self, R : ndarray, p : ndarray):
+        """Get the analytical inverse kinematics.
+
+        Args:
+            R: The rotation of the end effector.
+            p: The position of the end effector.
+
+        Returns:
+            The joint parameters of the robot joints.
+        """
+        return inverse_kinematics(p, None)
 
     def main(self):
+        """The main trajectory loop."""
 
-        from math import atan2, asin, degrees
-
-        x0 = -100
-        x1 = 100
-        y = 200
-        z = 200
-        yaw0 = atan2(y, x0)
-        yaw1 = atan2(y, x1)
-
-        start = ros.get_time()
-        self._trajectory = Trajectory(
-            [
-                (-100, y, z),
-                (-50, y, z),
-                (50, y, z),
-                (100, y, z)
-            ],
-            [euler_matrix(0, 0, yaw0)[:3, :3],  euler_matrix(0, 0, yaw1)[:3, :3]],
-            start,
-            50,
-            10
-        )
-
-        from numpy import linspace
-        print("Trajectory:")
-        for t in linspace(start, start + self._trajectory.duration, 10):
-            T = self._trajectory.at(t)
-            print(f"angle: {degrees(asin(T[1][0]))}")
-            # print(T)
-
-        # from random import uniform
-        # theta = [uniform(-1.5, 1.5) for _ in self._joint_names]
-
-        theta_last = None
+        # Wait for the first trajectory to be generated.
         while not ros.is_shutdown():
-            desired = self._trajectory.at(ros.get_time())
-            theta = self._inverse_kinematics(desired, theta_last)
-    
+
+            ready = False
+            self._lock.acquire()
+            ready = self._trajectory is not None and self._current is not None
+            self._lock.release()
+
+            if ready:
+                break
+
+            self._rate.sleep()
+
+        # Send joint states of the current trajectory.
+        while not ros.is_shutdown():
+
+            self._lock.acquire()
+            p = self._trajectory.translation(ros.get_time())
+            self._lock.release()
+
+            print(p)
+
+            theta = self._inverse(None, p)
+
+            # If theta was not able to be determined then don't do anything.
             if theta is not None:
-                theta_last = theta
-                print(theta)
-                # self._send_joint_states(theta)
+                self._send_joint_states(theta)
+                pass
+
+            self._rate.sleep()
 
 def main():
-    # from numpy import concatenate, cross
-    # screw = lambda w, p: concatenate((w, -cross(w, p)))
-    # screws = asarray([
-    #     screw(asarray(w), asarray(p)) for w, p in (
-    #         ((0, 0, 1), (0, 0, 0)),
-    #         ((1, 0, 0), (0, 0, 54)),
-    #         ((1, 0, 0), (0, 0, 171)),
-    #         ((1, 0, 0), (0, 0, 265))
-    #     )
-    # ])
-
     ros.init_node('carouselTrajectory')
-
-    screws = asarray([
-       [  0,   0,   1,   0,   0,   0],
-       [  1,   0,   0,   0,  54,   0],
-       [  1,   0,   0,   0, 171,   0],
-       [  1,   0,   0,   0, 265,   0]
-    ])
-    M = asarray([
-        [1, 0, 0, 0],
-        [0, 0, -1, 12],
-        [0, 1, 0, 303],
-        [0, 0, 0, 1],
-    ])
-
-    carousel = CarouselTrajectory(screws, M)
+    carousel = CarouselTrajectory(robot.carousel, method = 'random')
     carousel.main()
 
 if __name__ == '__main__':
