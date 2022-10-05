@@ -22,6 +22,10 @@ class Parameterisation(ABC):
         """
         pass
 
+    @abstractmethod
+    def duration(self):
+        pass
+
 class Rotation(ABC):
 
     @abstractmethod
@@ -56,7 +60,7 @@ class Trajectory:
         self._rotation = rotation
         self._translation = translation
 
-    def transformation(self, t : float) -> ndarray:
+    def __call__(self, t : float) -> ndarray:
         """Evaluates the transformation matrix T of the trajectory.
 
         Args:
@@ -68,26 +72,52 @@ class Trajectory:
         T, T[:3, :3], T[:3, 3] = eye(4), self._rotation(t), self._translation(t)
         return T
 
+class Linear(Parameterisation):
+
+    def __init__(self, start, duration):
+        self._duration = duration
+        self._m = 1 / duration
+        self._c = start
+
+    def __call__(self, t):
+        return self._m * t + self._c
+
+    def duration(self):
+        return self._duration
+
 class SCurve(Parameterisation):
 
-    def __init__(
-            self,
-            start,
-            velocity,
-            acceleration
-        ):
+    @staticmethod
+    def from_velocity_acceleration(start, velocity, acceleration):
         """Create a new S Curve parameterisation.
+
+        Acceleration is limited to a maximum of velocity squared.
 
         Args:
             start: The time at which the curve should start.
             velocity: The maximum coasting velocity.
             acceleration: The acceleration.
         """
+        return SCurve(
+            start,
+            v := velocity, 
+            a := max(v ** 2, acceleration),
+            T := (a + v**2) / (a * v)
+        )
 
-        # S curve parameters.
-        v = velocity
-        a = max(v ** 2, acceleration)
-        T = (acceleration + velocity**2) / (acceleration * velocity)
+    def __init__(self, start, v, a, T):
+        """Create a new S Curve parameterisation.
+
+        Args:
+            start: The time at which the curve should start.
+            v: The maximum coasting velocity.
+            a: The acceleration.
+            T: The period.
+        """
+        self._start = start
+        self._velocity = v
+        self._acceleration = a
+        self._duration = T
 
         # Piecewise function of t.
         self._s = lambda t: piecewise(
@@ -108,11 +138,6 @@ class SCurve(Parameterisation):
             )
         )
 
-        self._start = start
-        self._velocity = v
-        self._acceleration = a
-        self._duration = T
-
     def __call__(self, t) -> float:
         """Get the parameterisation s of the S curve at time t.
 
@@ -122,9 +147,32 @@ class SCurve(Parameterisation):
         Return:
             The parameterisation s.
         """
-        return self._s(asarray(t - self._start))
+        return self._s(t - self._start)
+
+    def duration(self):
+        return self._duration
+
+    def plot(self):
+        """Plot the S curve parameterisation."""
+        import matplotlib.pyplot as plt
+        from numpy import linspace
+
+        ts = linspace(self._start, self._start + self._duration, 100)
+        s = self(ts)
+
+        plt.plot(ts, s)
+        plt.xlabel('t')
+        plt.ylabel('s')
+        plt.title('S Curve Parameterisation')
+        plt.show()
 
 class InterpolatedRotation(Rotation):
+    """
+    References:
+        Formula: Modern Robotics pp. 328 / pdf 346
+        Rotation Exponential: Modern Robotics pp. 84 / pdf 102
+        Rotation Logarithm: Modern Robotics pp. 85 / pdf 103
+    """
 
     def __init__(self, R0, R1, parameterisation):
         """Instantiate a new interpolated rotation.
@@ -160,11 +208,11 @@ class Spline(Translation):
 
     def __init__(self, control, parameterisation):
         """Instantiate a new spline.
-        
+
         Args:
             control: The control points at which the splines should pass
                 through.
-            parameterisation: 
+            parameterisation:
         """
         self._parameterisation = parameterisation
 
@@ -185,161 +233,78 @@ class Spline(Translation):
         """
         return self._spline(self._parameterisation(t))
 
-class Trajectory:
-    """A 3D trajectory composed of spline interpolation and linearly
-    interpolated rotation."""
+    def plot(self):
+        import matplotlib.pyplot as plt
+        from numpy import linspace
 
-    def __init__(
-            self,
-            control : Sequence[Tuple[float, float, float]],
-            rotation : Tuple[ndarray, ndarray],
-            start : float,
-            acceleration : float,
-            velocity : float,
-            /
-        ):
-        """Create a new spline from the provided control points.
+        ts = linspace(0, self._parameterisation.duration(), 100)
+        p = [self(t) for t in ts]
 
-        Required that velocity ** 2 / acceleration <= 1 in order to reach
-        the coasting velocity.
+        x, y, z = list(zip(*p))
 
-        Args:
-            control: A sequence of control points that define the spline. Must
-                be at least length 4.
-            start: The time at which to start the trajectory.
-            acceleration: The acceleration to get to the coasting velocity.
-            velocity: The coasting velocity of the trajectory.
-        """
-        # Rotation matricies.
-        if len(rotation) != 2:
-            raise RuntimeError("Two rotation matricies required.")
-
-        self._R0 = asarray(rotation[0])
-        self._R1 = asarray(rotation[1])
-
-        if self._R0.shape != (3, 3) or self._R1.shape != (3, 3):
-            raise RuntimeError("Rotation matricies not 3x3.")
-
-        # Spline.
-        try:
-            (tck, c, k), _ = splprep(list(zip(*control)), k = 3, s = 0)
-            self._spline = BSpline(tck, asarray(c).T, k)
-        except TypeError:
-            raise RuntimeError("Must have at least 4 control points.")
-
-        # S curve parameters.
-        v = velocity
-        a = max(v ** 2, acceleration)
-        T = (acceleration + velocity**2) / (acceleration * velocity)
-
-        # Piecewise function of t.
-        self._s = lambda t: piecewise(
-            t,
-            condlist = (
-                t < 0,
-                logical_and(0 <= t, t < v / a),
-                logical_and(v / a <= t, t < T - v / a),
-                logical_and(T - v / a <= t, t <= T),
-                t > T
-            ),
-            funclist = (
-                lambda t: 0 * t,
-                lambda t: 0.5 * a * t ** 2,
-                lambda t: v * t - v ** 2 / (2 * a),
-                lambda t: (2*a*v*T - 2*v**2 - a**2*(t - T)**2) / (2*a),
-                lambda t: t / t
-            )
+        figure, axes = plt.subplot_mosaic([
+                ('x', '3d'),
+                ('y', '3d'),
+                ('z', '3d')
+            ]
         )
 
-        self._start = start
-        self._velocity = v
-        self._acceleration = a
-        self._duration = T
+        for label, data in [('x', x), ('y', y), ('z', z)]:
+            axes[label].plot(ts, data)
+            axes[label].set_xlabel('t')
+            axes[label].set_ylabel(label)
+            axes[label].set_title(f'{label.capitalize()} versus Time', fontsize = 'medium')
 
-    @property
-    def velocity(self):
-        return self._velocity
+        ss = axes['3d'].get_subplotspec()
+        axes['3d'].remove()
+        axes['3d'] = figure.add_subplot(ss, projection = '3d')
+        axes['3d'].set_xlabel('x')
+        axes['3d'].set_ylabel('y')
+        axes['3d'].set_zlabel('z')
+        axes['3d'].plot(x, y, z)
 
-    @property
-    def acceleration(self):
-        return self._acceleration
+        figure.set_figwidth(8)
+        figure.set_figheight(6)
+        plt.subplots_adjust(
+            left = 0.1,
+            bottom = 0.10,
+            right = 0.90,
+            top = 0.95,
+            wspace = 0.2,
+            hspace = 0.6
+        )
+        plt.show()
 
-    @property
-    def duration(self):
-        return self._duration
+def plot_spline_trajectory():
+    # s = SCurve(0, 1, 5)
+    # s.plot()
 
-    def s(self, t):
-        return self._s(asarray(t - self._start))
+    Spline(
+        [(-100, 0, 0), (-50, 0, 0), (50, 0, 0), (100, 0, 0)],
+        SCurve.from_velocity_acceleration(0, 20 / 100, 0)
+    ).plot()
 
-    def R(self, t):
-        return [self._R0 @ mexp(self._rotation_factor, x) for x in self._s(t)]
+def test_linear_parameterisation():
+    assert abs(Linear(0, 5)(5) - 1) < 1e-6
+    assert abs(Linear(-10, 10)(0) - (-10)) < 1e-6
+    assert abs(Linear(0, 1)(0)) < 1e-6
 
-    def p(self, t):
-        return self._spline(self._s(t))
+def test_interpolated_rotation():
+    from numpy import radians, degrees, arcsin, linspace
+    from tf.transformations import euler_matrix
 
-    def at(self, t, *, decomposed = False):
-        # Calculate the s curve interpolation constant.
-        s = self.s(t)
+    yaw = lambda R: degrees(arcsin(R[0, 1]))
 
-        w, t = mlog(self._R0.T @ self._R1, decomposed = True)
+    R0 = euler_matrix(0, 0, radians(-45))[:3, :3]
+    R1 = euler_matrix(0, 0, radians(45))[:3, :3]
 
-        R = self._R0 @ mexp(w, t * s)
+    print(R0, R1, sep = '\n\n')
 
-        p = self._spline(s)
+    rotation = InterpolatedRotation(R0, R1, Linear(0, 1))
 
-        if decomposed:
-            return R, p
+    print([yaw(rotation(t)) for t in linspace(0, 1, 5)])
 
-        T, T[:3, :3], T[:3, 3] = eye(4), R, p
-        return T
-
-def plot(translation, rotation):
-    """Plots the trajectory over time against time and 3D space, and the
-    parameterisation over time.
-    """
-    import matplotlib.pyplot as plt
-    from numpy import linspace
-
-    t = linspace(0, self.duration, 100)
-    R, p = self(t)
-    x, y, z = list(zip(*p))
-
-    figure, axes = plt.subplot_mosaic([
-            ('x', '3d'),
-            ('y', '3d'),
-            ('z', 's')
-        ]
-    )
-
-    for label, data in [('x', x), ('y', y), ('z', z), ('s', s)]:
-        axes[label].plot(t, data)
-        axes[label].set_xlabel('t')
-        axes[label].set_ylabel(label)
-        axes[label].set_title(f'{label.capitalize()} versus Time', fontsize = 'medium')
-
-    ss = axes['3d'].get_subplotspec()
-    axes['3d'].remove()
-    axes['3d'] = figure.add_subplot(ss, projection = '3d')
-
-    axes['3d'].plot(x, y, z)
-
-    axes['3d'].set_xlabel('x')
-    axes['3d'].set_ylabel('y')
-    axes['3d'].set_zlabel('z')
-
-    figure.set_figwidth(8)
-    figure.set_figheight(6)
-    plt.subplots_adjust(
-        left = 0.1,
-        bottom = 0.10,
-        right = 0.90,
-        top = 0.95,
-        wspace = 0.2,
-        hspace = 0.6
-    )
-    plt.show()
-
-if __name__ == '__main__':
+def test_trajectory():
     from numpy import eye
 
     trajectory = Trajectory(
@@ -349,3 +314,7 @@ if __name__ == '__main__':
     )
 
     trajectory.plot()
+
+if __name__ == '__main__':
+    plot_spline_trajectory()
+    # test_interpolated_rotation()
