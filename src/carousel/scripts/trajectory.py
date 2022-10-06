@@ -27,8 +27,9 @@ class CarouselTrajectory:
             self,
             robot : robot.Robot,
             joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4'),
-            method = 'numerical',
-            rate = 100
+            method : str = 'analytical',
+            rate : int = 100,
+            threshold : float = 10
         ):
         """Create a new carousel poser.
 
@@ -53,7 +54,7 @@ class CarouselTrajectory:
 
         # The initial desired orientation is the identity rotation extended
         # vertically to almost the maximum.
-        self._threshold = 10
+        self._threshold = threshold
 
         # The desired end effector configuration (R, p).
         self._desired = (eye(3), asarray([0, 0, sum(robot.L) - 10]))
@@ -99,6 +100,12 @@ class CarouselTrajectory:
             ros.logwarn("CarouselTrajectory desired effector not Pose.")
             self._lock.release()
 
+        # Ensure at least one end effector pose has been received before
+        # regenerating the trajectory.
+        if self._current is None:
+            self._lock.release()
+            return
+
         # Get the new desired position of the end effector.
         data = message.data.position
         new = asarray((data.x, data.y, data.z))
@@ -134,7 +141,7 @@ class CarouselTrajectory:
                 header = Header(stamp = ros.Time.now()),
                 name = self._joint_names,
                 position = theta,
-                velocity = [0.5, 0.5, 0.5, 0.5]
+                velocity = [1.0, 1.0, 1.0, 1.0]
             )
         )
 
@@ -163,12 +170,19 @@ class CarouselTrajectory:
             The joint parameters of the robot joints.
         """
         T, T[:3, :3], T[:3, 3] = eye(4), R, p
-        return newton_raphson(
+        theta = newton_raphson(
             self.robot.screws,
             self.self.robot.M,
             T,
             self._last
         )
+
+        # If the algorithm failed to converge then publish the last known
+        # thetas.
+        if theta is not None:
+            return theta
+
+        return self._last
 
     def _inverse_analytical(self, R : ndarray, p : ndarray):
         """Get the analytical inverse kinematics.
@@ -180,7 +194,7 @@ class CarouselTrajectory:
         Returns:
             The joint parameters of the robot joints.
         """
-        return inverse_kinematics(p, None)
+        return inverse_kinematics(p, self._robot.L)
 
     def main(self):
         """The main trajectory loop."""
@@ -205,14 +219,11 @@ class CarouselTrajectory:
             p = self._trajectory.translation(ros.get_time())
             self._lock.release()
 
-            print(p)
-
             theta = self._inverse(None, p)
+            print(f'{p} -> {theta}')
 
             # If theta was not able to be determined then don't do anything.
-            if theta is not None:
-                self._send_joint_states(theta)
-                pass
+            self._send_joint_states(theta)
 
             self._rate.sleep()
 
