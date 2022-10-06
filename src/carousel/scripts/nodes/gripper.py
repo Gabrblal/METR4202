@@ -28,9 +28,9 @@ class CarouselGripper:
         self._pin = pin
 
         # Setup pwn on the provided pin.
-        self._pi = pigpio.pi()
-        self._pi.set_mode(self._pin, pigpio.OUTPUT)
-        self._pi.set_servo_pulsewidth(pin,1000) 
+        self._pin = pigpio.pi()
+        self._pin.set_mode(self._pin, pigpio.OUTPUT)
+        self._pin.set_servo_pulsewidth(pin,1000)
 
         # Subscribe to gripper commands.
         self._box_sub = ros.Subscriber(gripper_topic, Float32, self._callback)
@@ -41,6 +41,8 @@ class CarouselGripper:
         Args:
             percentage: If not None then the percentage to open the gripper
                 between 0 and 1 inclusive."""
+        pulsewidth = minimum + (maximum - minimum)*percentage
+        self._pin.set_servo_pulsewidth(pin,pulsewidth)
         pass
 
     def _callback(self, message : Float32):
@@ -49,6 +51,9 @@ class CarouselGripper:
         Args:
             message: The percentage to set the gripper to.
         """
+        percent = message.data
+        if 0 < percent and percent < 1:
+            self._open(percent)
         pass
 
     def main(self):
