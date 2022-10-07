@@ -2,6 +2,7 @@ build/*
 devel/*
 logs/*
 .catkin_tools/*
+package/*
 
 # Dependency packages
 src/ximea_ros_cam
