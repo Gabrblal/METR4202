@@ -1,7 +1,6 @@
 from functools import reduce
 from itertools import accumulate
-from math import atan2
-from tkinter import Y
+from math import atan2, pi
 from typing import Sequence, Tuple, Union
 
 from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
@@ -349,7 +348,7 @@ def inverse_kinematics(
     z = end_effector_pos[2] # z-coordinate of end-effector
     #*****^^^This will be replaced by subscriber/publisher***********# 
 
-    alpha = -pi/2 # angle of gripper (0 to 90), set to 90 [radians]
+    alpha = -pi/2 + pi / 10 # angle of gripper (0 to 90), set to 90 [radians]
 
     # Dimentsions of the robot (in mm)
     L1 = link_length[0]
@@ -359,11 +358,11 @@ def inverse_kinematics(
     # Position of joint 3
     pxy = sqrt(x**2 + y**2) - L4*cos(alpha) 
     pz = z - L4*sin(alpha) - L1 #joint 3 y coordinate
-    print(pxy, pz)
+
     C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
 
     #Angle Calculations (in radians)
-    theta_1 = atan2(y,x)
+    theta_1 = atan2(x, y)
     theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
     theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
     theta_4 = (alpha - theta_2 - theta_3) % (2*pi)
