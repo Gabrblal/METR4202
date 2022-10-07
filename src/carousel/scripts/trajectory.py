@@ -25,19 +25,30 @@ class CarouselTrajectory:
 
     def __init__(
             self,
-            robot : robot.Robot,
+            screws : Sequence[ndarray],
+            M : ndarray,
+            link_lengths : Sequence[float],
             joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4'),
-            method = 'numerical',
-            rate = 100
+            method = 'analytical',
+            rate_max : int  = 100,
+            threshold  : int = 10
         ):
         """Create a new carousel poser.
 
         Args:
             screws: The screws of each joint.
             M: The home configuration of the end effector.
-            joints: A sequence of strings naming each joint.
+            link_lengths: The lengths of the links to the effector.
+            joint_names: A sequence of strings naming each joint.
+            method: The method to use for inverse kinematics. One of
+                'analytical', 'numerical' or 'random'.
+            rate_max: The maximum publishing rate of joint varaibles.
+            threshold: The threshold between the old and new desired end
+                effector configuration before regenerating the trajectory.
         """
-        self._robot = robot
+        self._screws = screws
+        self._M = M
+        self._link_lengths = link_lengths
         self._joint_names = joint_names
 
         # Inputs are the desired end effector location and the locations of
@@ -49,14 +60,14 @@ class CarouselTrajectory:
         # Output is the positions of all the joints.
         self._trajectory = None
         self._joint_pub = Topics.desired_joint_states.publisher()
-        self._rate = ros.Rate(rate)
+        self._rate = ros.Rate(rate_max)
 
         # The initial desired orientation is the identity rotation extended
         # vertically to almost the maximum.
-        self._threshold = 10
+        self._threshold = threshold
 
         # The desired end effector configuration (R, p).
-        self._desired = (eye(3), asarray([0, 0, sum(robot.L) - 10]))
+        self._desired = None
 
         # The current end effector configuration (R, p).
         self._current = None
@@ -74,18 +85,56 @@ class CarouselTrajectory:
         else:
             self._inverse = self._inverse_analytical
 
+    def _regenerate_trajectory(self, Rp0, Rp1):
+        """Regenerates the trajectory from an initial configuration to a
+        final configuration.
+
+        Args:
+            Rp0: A tuple of the rotation and translation (R, p) of the initial
+                configuration.
+            Rp1: A tuple of the rotation and translation (R, p) of the final
+                configuration.
+        """
+        R0, p0 = Rp0
+        R1, p1 = Rp1
+
+        # Vertical offset proportional to the distance travelled along the
+        # trajectory.
+        offset = asarray([0, 0, norm(p0 - p1) / 5])
+
+        now = ros.gettime()
+        self._trajectory = Spline(
+            [
+                p0,
+                p0 + offset ,
+                p1 + offset ,
+                p1
+            ],
+            Linear(now, now + norm(p0 - p1) / 40)
+            # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
+        )
+
     def _effector_callback(self, message : Pose):
         """Callback for when a true end effector configuration is published."""
         self._lock.acquire()
 
-        if isinstance(message, Pose):
-            q = message.orientation
-            self._current = (
-                euler_from_quaternion([q.x, q.y, q.z, q.w]),
-                asarray(message.position)
-            )
-        else:
+        if not isinstance(message, Pose):
             ros.logwarn("CarouselTrajectory end effector not Pose.")
+            self._lock.release()
+            return
+
+        # If a desired end effector configuration hsa been received before
+        # the end effector location is known, regenerate the trajectory.
+        regenerate = self._current is None and self._desired is not None
+
+        q = message.orientation
+        self._current = (
+            euler_from_quaternion([q.x, q.y, q.z, q.w]),
+            asarray(message.position)
+        )
+
+        if regenerate:
+            self._regenerate_trajectory(self._current, self._desired)
 
         self._lock.release()
 
@@ -98,10 +147,20 @@ class CarouselTrajectory:
         if not isinstance(message, Pose):
             ros.logwarn("CarouselTrajectory desired effector not Pose.")
             self._lock.release()
+            return
 
-        # Get the new desired position of the end effector.
-        data = message.data.position
-        new = asarray((data.x, data.y, data.z))
+        q = message.orientation
+        new = (
+            euler_from_quaternion([q.x, q.y, q.z, q.w]),
+            asarray(message.position)
+        )
+
+        if self._desired is None:
+            self._desired = new
+
+        if not self._current:
+            self._lock.release()
+            return
 
         # Get the hold desired position of the end effector.
         old = self._desired[1]
@@ -180,7 +239,7 @@ class CarouselTrajectory:
         Returns:
             The joint parameters of the robot joints.
         """
-        return inverse_kinematics(p, None)
+        return inverse_kinematics(p, self._link_lengths)
 
     def main(self):
         """The main trajectory loop."""
@@ -218,7 +277,12 @@ class CarouselTrajectory:
 
 def main():
     ros.init_node('carouselTrajectory')
-    carousel = CarouselTrajectory(robot.carousel, method = 'random')
+    carousel = CarouselTrajectory(
+        robot.carousel.screws,
+        robot.carousel.M,
+        robot.carousel.L,
+        method = 'analytical'
+    )
     carousel.main()
 
 if __name__ == '__main__':
