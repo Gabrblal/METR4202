@@ -51,15 +51,8 @@ class CarouselTrajectory:
         self._link_lengths = link_lengths
         self._joint_names = joint_names
 
-        # Inputs are the desired end effector location and the locations of
-        # the fiducial boxes.
-        self._effector_sub = Topics.effector.subscriber(self._effector_callback)
-        self._desired_sub = Topics.effector_desired.subscriber(self._desired_callback)
-        self._box_sub = Topics.box.subscriber(self._box_callback)
-
         # Output is the positions of all the joints.
         self._trajectory = None
-        self._joint_pub = Topics.desired_joint_states.publisher()
         self._rate = ros.Rate(rate_max)
 
         # The initial desired orientation is the identity rotation extended
@@ -85,6 +78,15 @@ class CarouselTrajectory:
         else:
             self._inverse = self._inverse_analytical
 
+        # Inputs are the desired end effector location and the locations of
+        # the fiducial boxes.
+        self._effector_sub = Topics.effector.subscriber(self._effector_callback)
+        self._desired_sub = Topics.effector_desired.subscriber(self._desired_callback)
+        self._box_sub = Topics.box.subscriber(self._box_callback)
+        self._joint_pub = Topics.desired_joint_states.publisher()
+
+        ros.loginfo('Initialised trajectory node.')
+
     def _regenerate_trajectory(self, Rp0, Rp1):
         """Regenerates the trajectory from an initial configuration to a
         final configuration.
@@ -95,6 +97,8 @@ class CarouselTrajectory:
             Rp1: A tuple of the rotation and translation (R, p) of the final
                 configuration.
         """
+        ros.loginfo('Regenerating Trajectory!')
+
         R0, p0 = Rp0
         R1, p1 = Rp1
 
@@ -102,7 +106,7 @@ class CarouselTrajectory:
         # trajectory.
         offset = asarray([0, 0, norm(p0 - p1) / 5])
 
-        now = ros.gettime()
+        now = ros.get_time()
         self._trajectory = Spline(
             [
                 p0,
@@ -110,9 +114,18 @@ class CarouselTrajectory:
                 p1 + offset ,
                 p1
             ],
-            Linear(now, now + norm(p0 - p1) / 40)
+            Linear(now, 2)
             # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
         )
+
+        ros.loginfo(
+            f'Regeneration trajectory '
+            f'{p0.flatten()} -> {p1.flatten()}'
+            f' between {now} and {now + 100}'
+        )
+
+        ros.loginfo(f'Initial angles: {self._inverse(None, p0)}')
+        ros.loginfo(f'Final angles: {self._inverse(None, p1)}')
 
     def _effector_callback(self, message : Pose):
         """Callback for when a true end effector configuration is published."""
@@ -128,10 +141,19 @@ class CarouselTrajectory:
         regenerate = self._current is None and self._desired is not None
 
         q = message.orientation
+        p = message.position
+
         self._current = (
             euler_from_quaternion([q.x, q.y, q.z, q.w]),
-            asarray(message.position)
+            asarray([p.x, p.y, p.z])
         )
+
+        new = (
+            euler_from_quaternion([q.x, q.y, q.z, q.w]),
+            asarray([p.x, p.y, p.z])
+        )
+
+        ros.loginfo(f'Got end effector position {self._current[1]}')
 
         if regenerate:
             self._regenerate_trajectory(self._current, self._desired)
@@ -150,30 +172,34 @@ class CarouselTrajectory:
             return
 
         q = message.orientation
+        p = message.position
+
         new = (
             euler_from_quaternion([q.x, q.y, q.z, q.w]),
-            asarray(message.position)
+            asarray([p.x, p.y, p.z])
         )
+
+        ros.loginfo(f'Got desired position {new[1]}')
 
         if self._desired is None:
             self._desired = new
 
         if not self._current:
+            ros.loginfo("Current position unknown. Not regenerating.")
             self._lock.release()
             return
 
         # Get the hold desired position of the end effector.
-        old = self._desired[1]
-        current = self._current[1]
+        old = self._desired
 
         # If the change in desired position has reached the threshold, then
         # recalculate the trajectory.
-        if not norm(new - old) < self._threshold:
-            now = ros.gettime()
-            self._trajectory = Spline(
-                [current, current, new, new],
-                Linear(now, now + norm(new - old) / 40)
-                # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
+        if not norm(new[1] - old[1]) > self._threshold:
+            self._regenerate_trajectory(self._current, new)
+        else:
+            ros.loginfo(
+                'Threshold not reached to regenerate trajectory. '
+                f'{norm(new[1] - old[1])} < {self._threshold}'
             )
 
         self._lock.release()
@@ -222,12 +248,18 @@ class CarouselTrajectory:
             The joint parameters of the robot joints.
         """
         T, T[:3, :3], T[:3, 3] = eye(4), R, p
-        return newton_raphson(
+
+        theta = newton_raphson(
             self.robot.screws,
             self.self.robot.M,
             T,
             self._last
         )
+
+        if theta is None:
+            return self._last
+
+        return theta
 
     def _inverse_analytical(self, R : ndarray, p : ndarray):
         """Get the analytical inverse kinematics.
@@ -249,7 +281,7 @@ class CarouselTrajectory:
 
             ready = False
             self._lock.acquire()
-            ready = self._trajectory is not None and self._current is not None
+            ready = self._trajectory is not None
             self._lock.release()
 
             if ready:
@@ -257,21 +289,19 @@ class CarouselTrajectory:
 
             self._rate.sleep()
 
+        ros.loginfo('Ready!')
+
         # Send joint states of the current trajectory.
         while not ros.is_shutdown():
 
             self._lock.acquire()
-            p = self._trajectory.translation(ros.get_time())
+            p = self._trajectory(ros.get_time())
             self._lock.release()
-
-            print(p)
 
             theta = self._inverse(None, p)
 
             # If theta was not able to be determined then don't do anything.
-            if theta is not None:
-                self._send_joint_states(theta)
-                pass
+            self._send_joint_states(theta)
 
             self._rate.sleep()
 
