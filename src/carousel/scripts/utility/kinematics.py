@@ -1,6 +1,6 @@
 from functools import reduce
 from itertools import accumulate
-from math import atan2
+from math import atan2, radians
 from tkinter import Y
 from typing import Sequence, Tuple, Union
 
@@ -376,8 +376,52 @@ def inverse_kinematics(
     theta_2 = pi/2-theta_2
     theta_3 = -theta_3
     theta_4 = theta_4
-    # if theta_4 > pi:
-    #     theta_4 = -((2*pi) - theta_4)
+    
+     # Add dynamixel limit detector
+    dynamixel_limit = radians(150)
+    dynamixel_limit_theta_4 = radians(90)
+    # If theta_1 goes further than +- 90 degrees, FLIP!!
+    if theta_1 > radians(90):
+        alpha = -alpha # Pitch angle flips
+        theta_2 = -theta_2 # Joint 2 flips
+        theta_3 = -theta_3 # Joint 3 flips
+        theta_4 = - theta_4 # Joint 4 flips
+        theta_1 = -pi/2 + (theta_1 - pi/2) 
+
+    # /-----\     to     /-----\  without turning theta_1 all the way around
+    #        \          /
+    #         \        / 
+    #        ----    ----
+    # Same for the other way
+    if theta_1 < -radians(90):
+        theta_2 = -theta_2 # Joint 2 flips
+        theta_3 = -theta_3 # Joint 3 flips
+        theta_4 = - theta_4
+        theta_1 = pi/2 - (theta_1 - pi/2)
+
+    if theta_2 > dynamixel_limit:
+        theta_2 = dynamixel_limit
+        print('Error: Joint_2 at angle limit 150 degrees')
+
+    if theta_2 < -dynamixel_limit:
+        theta_2 = dynamixel_limit
+        print('Error: Joint 2 at angle limit -150 degrees')
+
+    if theta_3 > dynamixel_limit:
+        theta_3 = dynamixel_limit
+        print('Error: Joint_3 at angle limit 150 degrees')
+
+    if theta_3 < -dynamixel_limit:
+        theta_3 = dynamixel_limit
+        print('Error: Joint 3 at angle limit -150 degrees')
+
+    if theta_4 > dynamixel_limit_theta_4:
+        theta_4 = dynamixel_limit_theta_4
+        print('Error: Joint_4 at angle limit 150 degrees')
+
+    if theta_4 < -dynamixel_limit_theta_4:
+        theta_4 = dynamixel_limit_theta_4
+        print('Error: Joint 4 at angle limit -150 degrees')
 
     # Publish thetas to the robot
     # return list of thetas
