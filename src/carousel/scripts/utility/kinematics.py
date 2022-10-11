@@ -363,7 +363,7 @@ def inverse_kinematics(
     C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
 
     #Angle Calculations (in radians)
-    theta_1 = atan2(y,x)
+    theta_1 = atan2(y,x) % (2*pi)
     theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
     theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
     theta_4 = (alpha - theta_2 - theta_3) % (2*pi)
