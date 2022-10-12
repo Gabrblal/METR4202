@@ -342,27 +342,27 @@ def inverse_analytical_4R(
         The angles of each joint to the end effector.
     """
 
-    # Coordinates of end-effector (cubes)
+    # Coordinates of end-effector (cubes/gripper end)
     x, y, z = end_effector_pos
 
-    alpha = -pi/2 + pi / 10 # angle of gripper (0 to 90), set to 90 [radians]
+    alpha = -pi/2 + pi / 10 # angle of gripper relative to GROUND (0 to 90), set to 90 [radians]
 
-    # Dimentsions of the robot (in mm)
+    # Dimentsions of the robot link length (in mm)
     L1, L2, L3, L4 = link_length
 
-    # Position of joint 3
-    pxy = sqrt(x**2 + y**2) - L4*cos(alpha) 
-    pz = z - L4*sin(alpha) - L1 #joint 3 y coordinate
+    # Position of joint 4
+    pxy = sqrt(x**2 + y**2) - L4*cos(alpha) # Radial distance of joint 4 in relation to joint 2
+    pz = z - L4*sin(alpha) - L1 # height of joint 4 in relation to joint 2
 
-    C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
+    cos_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) # From lecture 6
 
     #Angle Calculations (in radians)
-    theta_1 = angle_wrap(atan2(x, y))
-    theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
-    theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
-    theta_4 = angle_wrap((alpha - theta_2 - theta_3))
+    theta_1 = angle_wrap(atan2(x, y)) # yaw, wrapped
+    theta_3 = atan2(-sqrt(abs(1-cos_theta_2**2)), cos_theta_2) # From lecture 6, REMEMBER: theta_2 in lecture is theta_3 for us!
+    theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3))) # From lecture 6, REMEBER: theta_1 from lecture is theta_2 for us! 
+    theta_4 = angle_wrap((alpha - theta_2 - theta_3)) # theta 4 -- better draw a graph
 
-    #Update angles
+    #Update angles--to make them useable for the robot
     theta_1 = -theta_1
     theta_2 = pi/2-theta_2
     theta_3 = -theta_3
