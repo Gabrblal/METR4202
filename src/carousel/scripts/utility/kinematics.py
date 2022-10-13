@@ -1,6 +1,6 @@
 from functools import reduce
 from itertools import accumulate
-from math import atan2, pi
+from math import atan2, radians, remainder, degrees
 from typing import Sequence, Tuple, Union
 
 from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
@@ -318,7 +318,17 @@ def newton_raphson(
 
     return None
 
-def inverse_kinematics(
+def angle_wrap(angle):
+    """Wrap an angle onto the interval [-pi, pi].
+
+    Args:
+        angle: The angle to wrap in radians.
+
+    Returns:
+        The wrapped angle."""
+    return remainder(angle, 2 * pi)
+
+def inverse_analytical_4R(
         end_effector_pos : list,
         link_length : list
     ):
@@ -332,29 +342,14 @@ def inverse_kinematics(
         The angles of each joint to the end effector.
     """
 
-
-    #To test it:
-    #cd ~/catkin_ws
-    #catkin_make
-    #source devel/setup.bash
-    #roslaunch dynamixel_interface dynamixel_interface_controller.launch
-    #rostopic pub /desired_joint_states /msg_JointState [TAB]
-    #echo 0 | sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb
-
-    # Define variables (Don't exceed robot arm length)
     # Coordinates of end-effector (cubes)
-    x = end_effector_pos[0] # y-coordinate of end-effector
-    y = end_effector_pos[1] # x-coordinate of end-effector
-    z = end_effector_pos[2] # z-coordinate of end-effector
-    #*****^^^This will be replaced by subscriber/publisher***********# 
+    x, y, z = end_effector_pos
 
     alpha = -pi/2 + pi / 10 # angle of gripper (0 to 90), set to 90 [radians]
 
     # Dimentsions of the robot (in mm)
-    L1 = link_length[0]
-    L2 = link_length[1]
-    L3 = link_length[2]
-    L4 = link_length[3]
+    L1, L2, L3, L4 = link_length
+
     # Position of joint 3
     pxy = sqrt(x**2 + y**2) - L4*cos(alpha) 
     pz = z - L4*sin(alpha) - L1 #joint 3 y coordinate
@@ -362,21 +357,24 @@ def inverse_kinematics(
     C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
 
     #Angle Calculations (in radians)
-    theta_1 = atan2(x, y)
+    theta_1 = angle_wrap(atan2(x, y))
     theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
     theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
-    theta_4 = (alpha - theta_2 - theta_3) % (2*pi)
-
-    if theta_4 > pi:
-        theta_4 = -((2*pi) - theta_4)
+    theta_4 = angle_wrap((alpha - theta_2 - theta_3))
 
     #Update angles
     theta_1 = -theta_1
     theta_2 = pi/2-theta_2
     theta_3 = -theta_3
     theta_4 = theta_4
-    # if theta_4 > pi:
-    #     theta_4 = -((2*pi) - theta_4)
+
+    # If theta_1 goes further than +- 90 degrees, FLIP!!
+    if not (-pi/2 < theta_1 < pi/2):
+        theta_2 = -theta_2 # Joint 2 flips
+        theta_3 = -theta_3 # Joint 3 flips
+        theta_4 = -theta_4 # Joint 4 flips
+        theta_1 = angle_wrap(theta_1 + pi)
+
 
     # Publish thetas to the robot
     # return list of thetas

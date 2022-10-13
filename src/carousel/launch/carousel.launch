@@ -14,5 +14,9 @@
 		<rosparam command="load" file="$(find dynamixel_interface)/config/controller_config.yaml" />
 	</node>
 
-    <node name="carouselTrajectory" pkg="carousel" type="trajectory.py" output="screen"></node>
+    <node name="carouselTrajectory" pkg="carousel" type="trajectory.py"></node>
+
+	<!-- Start the gripper node. -->
+	<node name="carouselGripperNode" pkg="carousel" type="gripper.py" output="screen"></node>
+
 </launch>
