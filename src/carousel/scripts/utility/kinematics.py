@@ -1,60 +1,66 @@
 from functools import reduce
 from itertools import accumulate
 from math import atan2, radians, remainder, degrees
-from typing import Sequence, Tuple, Union
+from typing import Concatenate, Sequence, Tuple, Union
 
 from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
-from numpy import zeros, pi, concatenate, vstack, abs, arctan2
+from numpy import zeros, pi, concatenate, abs, arctan2
 from numpy.linalg import norm, pinv
+
+# Set the zero tolerance to 100 times the machine epsilon
+zero_tolerance = (7 / 3 - 4 / 3 - 1) * 1000
+
+def skew(m):
+    """Return the skew symmetric representation of a matrix of degree 3."""
+    assert len(m) == 3
+    return asarray([
+        [0,    -m[2],  m[1]],
+        [m[2],    0,  -m[0]],
+        [-m[1], m[0],     0]
+    ])
 
 def mlog(R : ndarray, *, decomposed = False):
     """Calculate the logarithm of a rotation matrix.
-    
+
     Args:
         R: The rotation matrix.
+        decomposed: True to return a tuple of the rotation axis and angle,
+            or False to return the rotation matrix.
 
     Returns:
-        The 3x3 skew symmetric logarithmic matrix.
+        If decomposed is False then returns the 3x3 skew symmetric rotation
+        matrix, otherwise returns a tuple of the rotation axis, angle and skew
+        symmetric representation (w, theta, skew).
     """
 
     # If the rotation is identity then there is no rotation.
-    if (R == eye(3)).all():
-        return R
+    if (abs(R - eye(3)) < zero_tolerance).all():
+        w = zeros(3)
+        theta = 0
 
     # If the rotation is pi.
-    if trace(R) == -1:
+    elif trace(R) == -1:
         theta = pi
-        w = 1 / sqrt(2 * (1 + R[2, 2])) * (R[:, 2] + asarray([0, 0, 1]))
-        skew = asarray([
-            [0,    -w[2],  w[1]],
-            [w[2],    0,  -w[0]],
-            [-w[1], w[0],     0]
-        ])
+
+        # The closest axis.
+        i = min([(abs(1 + R[i, i]), i) for i in range(3)])[1]
+        d = asarray([0, 0, 0])
+        d[i] += 1
+
+        # Rotation axis.
+        w = (1 / sqrt(2 * (1 + R[i, i])) * (R[:, i] + d))
 
     # Otherwise calculate the angle theta, the skew symmetric matrix and extract
     # the rotation axis.
     else:
         theta = arccos((trace(R) - 1) / 2)
-        skew = 1 / (2 * sin(theta)) * (R - R.T)
-        w = asarray([skew[2, 1], skew[0, 2], skew[1, 0]])
+        skewed = 1 / 2 / sin(theta) * (R - R.T)
+        w = asarray([skewed[2, 1], skewed[0, 2], skewed[1, 0]])
 
     if decomposed:
         return w, theta
 
-    return skew * theta
-
-def mexp(w : ndarray, theta : float):
-
-    skew = asarray([
-        [0, -w[2], w[1]],
-        [w[2], 0, -w[0]],
-        [-w[1], w[0], 0]
-    ])
-
-    sin_t, cos_t = sin(theta), cos(theta)
-
-    # Rotation matrix equal to e ** ([w] * theta)
-    return eye(3) + sin_t * skew + (1 - cos_t) * (skew @ skew)
+    return skew(w) * theta
 
 def texp(S : ndarray, theta : float, *, decomposed : bool = False):
     """Calculate the transformation matrix exponential e ** ([S] * theta).
@@ -75,19 +81,14 @@ def texp(S : ndarray, theta : float, *, decomposed : bool = False):
     w, v = S[0:3], S[3:6]
 
     # Calculate the skew symmetric matrix representation of the twist axis.
-    skew = asarray([
-        [0, -w[2], w[1]],
-        [w[2], 0, -w[0]],
-        [-w[1], w[0], 0]
-    ])
-
+    ws = skew(w)
     sin_t, cos_t = sin(theta), cos(theta)
 
     # Rotation matrix equal to e ** ([w] * theta)
-    R = eye(3) + sin_t * skew + (1 - cos_t) * (skew @ skew)
+    R = eye(3) + sin_t * ws + (1 - cos_t) * (ws @ ws)
 
     # Translation.
-    p = (eye(3) * theta + (1 - cos_t) * skew + (theta - sin_t) * (skew @ skew)) @ v
+    p = (eye(3) * theta + (1 - cos_t) * ws + (theta - sin_t) * (ws @ ws)) @ v
 
     if decomposed:
         return R, p
@@ -96,14 +97,14 @@ def texp(S : ndarray, theta : float, *, decomposed : bool = False):
     T, T[:3, :3], T[:3, 3] = eye(4), R, p
     return T
 
-def tlog(*T : Union[ndarray, Tuple[ndarray, ndarray]], vector = False):
+def tlog(*T : ndarray | Tuple[ndarray, ndarray], decomposed = False):
     """Calculate the matrix logaritm of a transformation matrix.
 
     Args:
         T: Either the 4x4 transformation matrix, or a 3x3 rotation matrix
             and a 3x1 translation vector, to take the logarithm of.
-        vector: True to return a screw vector V, or False to return
-            The transformation matrix.
+        decompose: True to return a screw vector V and the angle of rotation,
+            or False to return the transformation matrix.
 
     Returns:
         A screw V of the transformation if vector is True, or the transformation
@@ -117,41 +118,32 @@ def tlog(*T : Union[ndarray, Tuple[ndarray, ndarray]], vector = False):
 
     # If the rotation is identity then there is no axis of rotation, but
     # travel the distance |p| in the direction of p.
-    if (R == eye(3)).all():
-        return zeros(3), p / norm(p), norm(p)
+    if (abs(R - eye(3)) < zero_tolerance).all():
+        if not decomposed:
+            t, t[:3, 3] = zeros((4, 4)), p
+            return t
 
-    # If the rotation is pi.
-    if trace(R) == -1:
-        theta = pi
-        w = 1 / sqrt(2 * (1 + R[2, 2])) * (R[:, 2] + asarray([0, 0, 1]))
+        theta = norm(p)
+        V = concatenate(((0, 0, 0), p / theta)).reshape((6, 1))
+        return V, theta
 
-    # Otherwise calculate the angle theta, the skew symmetric matrix and extract
-    # the rotation axis.
-    else:
-        theta = arccos((trace(R) - 1) / 2)
-        skew = 1 / (2 * sin(theta)) * (R - R.T)
-        w = asarray([skew[1, 2], skew[0, 2], skew[1, 0]])
+    w, theta = mlog(R, decomposed = True)
+    skewed = skew(w)
 
     Gi = (
         1 / theta * eye(3) -
-        0.5 * skew +
-        (1 / theta - 0.5 * 1 / tan(theta / 2)) * (skew @ skew)
+        0.5 * skewed +
+        (1 / theta - 0.5 * 1 / tan(theta / 2)) * (skewed @ skewed)
     )
 
     v = Gi @ p
 
-    # array[None] converts a 1D array to a 2D array.
-    if vector:
-        return concatenate((w * theta, v * theta))[None].T
+    if decomposed:
+        V = concatenate((w, v)).reshape((6, 1))
+        return V, theta
 
-    # Transformation matrix given by the skew symmatrix rotation matrix and
-    # the translation vector p.
-    return asarray([
-        [0,    -w[2],  w[1], p[0]],
-        [w[2],    0,  -w[0], p[1]],
-        [-w[1], w[0],     0, p[2]],
-        [0,        0,     0,    0]
-    ]) * theta
+    t, t[:3, :3], t[:3, 3] = zeros((4, 4)), skew(w), v
+    return t * theta
 
 def tinv(T):
     """Calculate the inverse of a transformation matrix.
@@ -330,13 +322,15 @@ def angle_wrap(angle):
 
 def inverse_analytical_4R(
         end_effector_pos : list,
-        link_length : list
+        link_length : list,
+        alpha = -pi / 2 + pi / 10
     ):
     """Calculate the joint positions from an end effector configuration.
-    
+
     Args:
         pose: The end effector configuration.
         lengths: The lengths of each links.
+        alpha: The angle of the end effector.
 
     Returns:
         The angles of each joint to the end effector.
@@ -344,22 +338,18 @@ def inverse_analytical_4R(
 
     # Coordinates of end-effector (cubes)
     x, y, z = end_effector_pos
-
-    alpha = -pi/2 + pi / 10 # angle of gripper (0 to 90), set to 90 [radians]
-
-    # Dimentsions of the robot (in mm)
     L1, L2, L3, L4 = link_length
 
     # Position of joint 3
-    pxy = sqrt(x**2 + y**2) - L4*cos(alpha) 
-    pz = z - L4*sin(alpha) - L1 #joint 3 y coordinate
+    pxy = sqrt(x ** 2 + y ** 2) - L4 * cos(alpha) 
+    pz = z - L4 * sin(alpha) - L1 #joint 3 y coordinate
 
-    C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
+    C_theta_2 = (pxy ** 2 + pz ** 2 - L2 ** 2 - L3 ** 2) / (2 * L2 * L3) 
 
     #Angle Calculations (in radians)
     theta_1 = angle_wrap(atan2(x, y))
-    theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
-    theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
+    theta_3 = atan2(-sqrt(abs(1 - C_theta_2 ** 2)), C_theta_2)
+    theta_2 = (atan2(pz, pxy) - atan2(L3 * sin(theta_3), L2 + L3 * cos(theta_3)))
     theta_4 = angle_wrap((alpha - theta_2 - theta_3))
 
     #Update angles
@@ -370,15 +360,12 @@ def inverse_analytical_4R(
 
     # If theta_1 goes further than +- 90 degrees, FLIP!!
     if not (-pi/2 < theta_1 < pi/2):
-        theta_2 = -theta_2 # Joint 2 flips
-        theta_3 = -theta_3 # Joint 3 flips
-        theta_4 = -theta_4 # Joint 4 flips
+        theta_2 *= -1 # Joint 2 flips
+        theta_3 *= -1 # Joint 3 flips
+        theta_4 *= -1 # Joint 4 flips
         theta_1 = angle_wrap(theta_1 + pi)
 
-
-    # Publish thetas to the robot
-    # return list of thetas
-    return [theta_1, theta_2, theta_3, theta_4]
+    return theta_1, theta_2, theta_3, theta_4
 
 def test_space_jacobian():
     screws = asarray([
