@@ -7,6 +7,7 @@ from typing import Callable, Any
 from std_msgs.msg import Float32, ColorRGBA, Header
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
+from fiducial_msgs.msg import FiducialTransformArray
 
 @dataclass
 class Topic:
@@ -33,7 +34,7 @@ class Topic:
             queue_size: The size of the message queue.
 
         Returns:
-            A publisher to this topic.
+            A publisher to this topic.FiducialTransformArray)
         """
         return ros.Publisher(self.string, self.type, queue_size = queue_size)
 
@@ -59,3 +60,7 @@ class Topics:
 
     # Topic about the desired joint states provided by the dynamixel library.
     desired_joint_states = Topic('desired_joint_states', JointState)
+
+    fiducial_transforms = Topic('fiducial_transforms', FiducialTransformArray)
+
+    correct_frames = Topic('correct_frame', FiducialTransformArray)
