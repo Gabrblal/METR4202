@@ -49,10 +49,7 @@
     "inputs": [
         {
             "id": "package",
-            "type": "pickString",
-            "options": [
-                "time"
-            ],
+            "type": "promptString",
             "description": "The name of the package of the executable?"
         },
         {

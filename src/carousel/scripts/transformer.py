@@ -1,6 +1,6 @@
 import rospy as ros
 
-from ..topics import Topics
+from topics import Topics
 
 class CarouselTransformer:
     """The carousel input transformation node.

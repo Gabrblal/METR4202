@@ -1,202 +1,225 @@
-from typing import Sequence, Tuple
+#! /usr/bin/python3
 
-from scipy.interpolate import splprep, BSpline
-from numpy import ndarray, asarray, piecewise, logical_and
+from threading import Lock
+from typing import Sequence
 
-from .trajectory import texp, tlog
+import rospy as ros
+from tf.transformations import euler_from_quaternion
 
-class Trajectory:
-    """A 3D trajectory composed of spline interpolation and linearly
-    interpolated rotation."""
+from numpy import asarray, ndarray, eye
+from numpy.linalg import norm
+
+import utility.robot as robot
+from utility.topics import Topics, JointState, Header, Pose
+
+from utility.trajectory import Spline, SCurve, Linear
+from utility.kinematics import inverse_kinematics, newton_raphson
+
+class CarouselTrajectory:
+    """Node responsible for handling the trajectory of the end effector by
+    taking the current desired end effector configuratio
+
+    Class responsible for calculating trajectories and pose of the carousel
+    arm.
+    """
 
     def __init__(
             self,
-            control : Sequence[Tuple[float, float, float]],
-            rotation : Tuple[ndarray, ndarray],
-            start : float,
-            acceleration : float,
-            velocity : float,
-            /
+            robot : robot.Robot,
+            joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4'),
+            method = 'numerical',
+            rate = 100
         ):
-        """Create a new spline from the provided control points.
-
-        Required that velocity ** 2 / acceleration <= 1 in order to reach
-        the coasting velocity.
+        """Create a new carousel poser.
 
         Args:
-            control: A sequence of control points that define the spline. Must
-                be at least length 4.
-            start: The time at which to start the trajectory.
-            acceleration: The acceleration to get to the coasting velocity.
-            velocity: The coasting velocity of the trajectory.
-
+            screws: The screws of each joint.
+            M: The home configuration of the end effector.
+            joints: A sequence of strings naming each joint.
         """
-        # Rotation matricies.
-        if len(rotation) != 2:
-            raise RuntimeError("Two rotation matricies required.")
+        self._robot = robot
+        self._joint_names = joint_names
 
-        self._R0 = asarray(rotation[0])
-        self._R1 = asarray(rotation[1])
+        # Inputs are the desired end effector location and the locations of
+        # the fiducial boxes.
+        self._effector_sub = Topics.effector.subscriber(self._effector_callback)
+        self._desired_sub = Topics.effector_desired.subscriber(self._desired_callback)
+        self._box_sub = Topics.box.subscriber(self._box_callback)
 
-        if self._R0.shape != (3, 3) or self._R1.shape != (3, 3):
-            raise RuntimeError("Rotation matricies not 3x3.")
+        # Output is the positions of all the joints.
+        self._trajectory = None
+        self._joint_pub = Topics.desired_joint_states.publisher()
+        self._rate = ros.Rate(rate)
 
-        self._rotation_factor = tlog(self._R0.T @ self._R1)
+        # The initial desired orientation is the identity rotation extended
+        # vertically to almost the maximum.
+        self._threshold = 10
 
-        # Spline.
-        try:
-            (tck, c, k), _ = splprep(list(zip(*control)), k = 3, s = 0)
-            self._spline = BSpline(tck, asarray(c).T, k)
-        except TypeError:
-            raise RuntimeError("Must have at least 4 control points.")
+        # The desired end effector configuration (R, p).
+        self._desired = (eye(3), asarray([0, 0, sum(robot.L) - 10]))
 
-        # S curve parameters.
-        v = velocity
-        a = max(v ** 2, acceleration)
-        T = (acceleration + velocity**2) / (acceleration * velocity)
+        # The current end effector configuration (R, p).
+        self._current = None
 
-        # Piecewise function of t.
-        self._s = lambda t: piecewise(
-            t,
-            condlist = (
-                t < 0,
-                logical_and(0 <= t, t < v / a),
-                logical_and(v / a <= t, t < T - v / a),
-                logical_and(T - v / a <= t, t <= T),
-                t > T
-            ),
-            funclist = (
-                lambda t: 0 * t,
-                lambda t: 0.5 * a * t ** 2,
-                lambda t: v * t - v ** 2 / (2 * a),
-                lambda t: (2*a*v*T - 2*v**2 - a**2*(t - T)**2) / (2*a),
-                lambda t: t / t
+        # Lock protecting concurrent data access from callbacks.
+        self._lock = Lock()
+
+        # The last theta angle sent.
+        self._last = None
+
+        if method == 'numerical':
+            self._inverse = self._inverse_numerical
+        elif method == 'random':
+            self._inverse = self._inverse_random
+        else:
+            self._inverse = self._inverse_analytical
+
+    def _effector_callback(self, message : Pose):
+        """Callback for when a true end effector configuration is published."""
+        self._lock.acquire()
+
+        if isinstance(message, Pose):
+            q = message.orientation
+            self._current = (
+                euler_from_quaternion([q.x, q.y, q.z, q.w]),
+                asarray(message.position)
+            )
+        else:
+            ros.logwarn("CarouselTrajectory end effector not Pose.")
+
+        self._lock.release()
+
+    def _desired_callback(self, message : Pose):
+        """Callback for when a new desired end effector configuration is
+        published.
+        """
+        self._lock.acquire()
+
+        if not isinstance(message, Pose):
+            ros.logwarn("CarouselTrajectory desired effector not Pose.")
+            self._lock.release()
+
+        # Get the new desired position of the end effector.
+        data = message.data.position
+        new = asarray((data.x, data.y, data.z))
+
+        # Get the hold desired position of the end effector.
+        old = self._desired[1]
+        current = self._current[1]
+
+        # If the change in desired position has reached the threshold, then
+        # recalculate the trajectory.
+        if not norm(new - old) < self._threshold:
+            now = ros.gettime()
+            self._trajectory = Spline(
+                [current, current, new, new],
+                Linear(now, now + norm(new - old) / 40)
+                # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
+            )
+
+        self._lock.release()
+
+    def _box_callback(self):
+        """Callback for when a new cube configuration is published."""
+        pass
+
+    def _send_joint_states(self, theta : Sequence[float]):
+        """Publishes a joint state message containing the angles of each joint.
+
+        Args:
+            theta: A sequence of joint parameters for each joint on the arm.
+        """
+        self._joint_pub.publish(
+            JointState(
+                header = Header(stamp = ros.Time.now()),
+                name = self._joint_names,
+                position = theta,
+                velocity = [0.5, 0.5, 0.5, 0.5]
             )
         )
 
-        self._start = start
-        self._velocity = v
-        self._acceleration = a
-        self._duration = T
-
-    @property
-    def velocity(self):
-        return self._velocity
-
-    @property
-    def acceleration(self):
-        return self._acceleration
-
-    @property
-    def duration(self):
-        return self._duration
-
-    def s(self, t):
-        """Evaluates the parameterisation of the trajectory over time.
+    def _inverse_random(self, R : ndarray, p : ndarray):
+        """Get random theta values.
 
         Args:
-            t: The times at which to evaluate the trajectory parameter.
+            R: The rotation of the end effector.
+            p: The position of the end effector.
 
         Returns:
-            An array or single value of the trajectory parameters.
+            The joint parameters of the robot joints.
         """
-        return self._s(asarray(t - self._start))
+        from random import uniform
+        ros.sleep(0.5)
+        return [uniform(-1.5, 1.5) for _ in self._joint_names]
 
-    def R(self, t):
-        """Evaluates the rotation of the trajectory as a function of time.
+    def _inverse_numerical(self, R : ndarray, p : ndarray):
+        """Get the analytical inverse kinematics.
 
         Args:
-            t: The times at which to evaluate the rotation.
+            R: The rotation of the end effector.
+            p: The position of the end effector.
 
         Returns:
-            The rotation matricies at the provided times.
+            The joint parameters of the robot joints.
         """
-        return [self._R0 @ texp(self._rotation_factor * x) for x in self._s(t)]
-
-    def p(self, t):
-        """Evaluates the translation of the trajectory as a function of time.
-
-        Args:
-            t: The times at which to evaluate the translation.
-
-        Returns:
-            An array of or singular position at s.
-        """
-        return self._spline(self._s(t))
-
-    def __call__(self, t):
-        """Evaluates the trajectory at the provided time.
-
-        Args:
-            t: The time in seconds to evaluate the configuration of the
-                trajectory.
-
-        Returns:
-            A tuple of (rotations, translations) at the provided times.
-        """
-        # Calculate the s curve interpolation constant.
-        s = self.s(t)
-
-        R = [self._R0 @ texp(self._rotation_factor * x) for x in s]
-        p = self._spline(s)
-
-        return R, p
-
-    def plot(self):
-        """Plots the trajectory over time against time and 3D space, and the
-        parameterisation over time.
-        """
-
-        import matplotlib.pyplot as plt
-        from numpy import linspace
-
-        t = linspace(0, self.duration, 100)
-        s = self.s(t)
-        R, p = self(t)
-        x, y, z = list(zip(*p))
-
-        figure, axes = plt.subplot_mosaic([
-                ('x', '3d'),
-                ('y', '3d'),
-                ('z', 's')
-            ]
+        T, T[:3, :3], T[:3, 3] = eye(4), R, p
+        return newton_raphson(
+            self.robot.screws,
+            self.self.robot.M,
+            T,
+            self._last
         )
 
-        for label, data in [('x', x), ('y', y), ('z', z), ('s', s)]:
-            axes[label].plot(t, data)
-            axes[label].set_xlabel('t')
-            axes[label].set_ylabel(label)
-            axes[label].set_title(f'{label.capitalize()} versus Time', fontsize = 'medium')
+    def _inverse_analytical(self, R : ndarray, p : ndarray):
+        """Get the analytical inverse kinematics.
 
-        ss = axes['3d'].get_subplotspec()
-        axes['3d'].remove()
-        axes['3d'] = figure.add_subplot(ss, projection = '3d')
+        Args:
+            R: The rotation of the end effector.
+            p: The position of the end effector.
 
-        axes['3d'].plot(x, y, z)
+        Returns:
+            The joint parameters of the robot joints.
+        """
+        return inverse_kinematics(p, None)
 
-        axes['3d'].set_xlabel('x')
-        axes['3d'].set_ylabel('y')
-        axes['3d'].set_zlabel('z')
-        
-        figure.set_figwidth(8)
-        figure.set_figheight(6)
-        plt.subplots_adjust(
-            left = 0.1,
-            bottom = 0.10,
-            right = 0.90,
-            top = 0.95,
-            wspace = 0.2,
-            hspace = 0.6
-        )
-        plt.show()
+    def main(self):
+        """The main trajectory loop."""
+
+        # Wait for the first trajectory to be generated.
+        while not ros.is_shutdown():
+
+            ready = False
+            self._lock.acquire()
+            ready = self._trajectory is not None and self._current is not None
+            self._lock.release()
+
+            if ready:
+                break
+
+            self._rate.sleep()
+
+        # Send joint states of the current trajectory.
+        while not ros.is_shutdown():
+
+            self._lock.acquire()
+            p = self._trajectory.translation(ros.get_time())
+            self._lock.release()
+
+            print(p)
+
+            theta = self._inverse(None, p)
+
+            # If theta was not able to be determined then don't do anything.
+            if theta is not None:
+                self._send_joint_states(theta)
+                pass
+
+            self._rate.sleep()
+
+def main():
+    ros.init_node('carouselTrajectory')
+    carousel = CarouselTrajectory(robot.carousel, method = 'random')
+    carousel.main()
 
 if __name__ == '__main__':
-    from numpy import eye
-
-    trajectory = Trajectory(
-        [(0, 0, 0), (0, 1, 1), (2, -1, 0), (-1, -2, -1), (0, -2, 2), (1, 2, 1)],
-        [eye(3), eye(3)],
-        0, 10, 2
-    )
-
-    trajectory.plot()
+    main()

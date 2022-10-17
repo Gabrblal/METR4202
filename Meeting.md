@@ -93,7 +93,7 @@ Tasks:
 - Figure out how to calibrate the fiducial markers so they are in the coordinate reference frame of the base of the robot. Calibration at the beginning by scanning the base of the robot? Transform into the robot base reference frame. **Benji**.
   - Receive messages in camera reference frame.
   - Create a node that subscribes to the camera and publish a message in the robot reference frame with the p vector as the middle of the image in millimetres, and orientation as a rotation matrix.
-  - Publish p = (x, y, z), R = (r11, r12, r12, r21, r22, r23, r31, r32, r33).
+  - Publish p = (x, y, z), R = (r11, r12, r12, r21, r22, r23, r31, r32, r33).kz
   - Publish in millimetres.
 - Figuring out what the valid values for the joint angles are, where the zero position is, units of measurements. Model AX-12A. Assume radians. **Gabe**.
 - How to avoid collisions with other boxes and itself and eliminate those configurations from the inverse kinematics. Ask the tutors. **Benji, Helena**.
@@ -125,3 +125,24 @@ Tasks:
   - Implementing listening to percentage open messages and setting the gripper to the desired state.
 - `CarouselEndEffector` **Isaac**
   - Implement listening to the current joint angles and calculating and publishing the current end effector configuration.
+
+## 07/10/2022 @ 10:00am
+
+Gannt chart to make sure everyone has completed their tasks on time and everyone knows their tasks.
+
+Logic may be too slow for constant rotation. 
+
+End effector orientation is always 90 degrees. That limits the workspace of the robot.
+
+Coordinate reference frame from the base of the robot. Fiducial image on a homing aruco tag on the front left of the platform.
+
+Decision algorithm:
+1. Furthest distance from cluster of aruco centres. Furthest that is still valid.
+1. Difference between the yaw of the centre of the aruco cube and the yaw of the aruco.
+1. Perpendicular distanceto other cubes must be greater than the maximum radius of a cube.
+
+Then show the camera the fiducial to determine the colour.
+
+Then place the fiducial in the correct location.
+
+
