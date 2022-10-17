@@ -1,18 +1,21 @@
 <launch>
 
+	<node name="XimeaDemoNode" pkg="ximea_ros" type="ximea_demo"></node>
 
 	<!-- Start the ximea camera node -->
-	<!-- <arg name="serial" default="31701651"/>
 	<include file="$(find aruco_detect)/launch/aruco_detect.launch">
-		<arg name="camera" value="/ximea_ros/ximea_$(arg serial)"/>
+		<arg name="camera" value="/ximea_ros/ximea_31701651"/>
+		<arg name="fiducial_len" value="0.028"/>
 		<arg name="image" value="/image_raw"/>
 		<arg name="dictionary" value="0"/>
-	</include> -->
+	</include>
+
+	<node name="carouselCamera" pkg="carousel" type="camera.py" output="screen"></node> -->
 
     <!-- Start the dynamixel driver node for interfacing with the dynamixel motors-->
-	<node name="dynamixel_interface_controller_node" pkg="dynamixel_interface" type="dynamixel_interface_controller_node" output="screen">
+	<!-- <node name="dynamixel_interface_controller_node" pkg="dynamixel_interface" type="dynamixel_interface_controller_node" output="screen">
 		<rosparam command="load" file="$(find dynamixel_interface)/config/controller_config.yaml" />
 	</node>
 
-    <node name="carouselTrajectory" pkg="carousel" type="trajectory.py"></node>
+    <node name="carouselTrajectory" pkg="carousel" type="trajectory.py"></node> -->
 </launch>
