@@ -1,10 +1,59 @@
 from functools import reduce
 from itertools import accumulate
-from typing import Sequence, Tuple
+from typing import Sequence, Tuple, Union
 
 from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
-from numpy import zeros, pi, concatenate, vstack, abs
+from numpy import zeros, pi, concatenate, vstack, abs, arctan2
 from numpy.linalg import norm, pinv
+
+def mlog(R : ndarray, *, decomposed = False):
+    """Calculate the logarithm of a rotation matrix.
+    
+    Args:
+        R: The rotation matrix.
+
+    Returns:
+        The 3x3 skew symmetric logarithmic matrix.
+    """
+
+    # If the rotation is identity then there is no rotation.
+    if (R == eye(3)).all():
+        return R
+
+    # If the rotation is pi.
+    if trace(R) == -1:
+        theta = pi
+        w = 1 / sqrt(2 * (1 + R[2, 2])) * (R[:, 2] + asarray([0, 0, 1]))
+        skew = asarray([
+            [0,    -w[2],  w[1]],
+            [w[2],    0,  -w[0]],
+            [-w[1], w[0],     0]
+        ])
+
+    # Otherwise calculate the angle theta, the skew symmetric matrix and extract
+    # the rotation axis.
+    else:
+        theta = arccos((trace(R) - 1) / 2)
+        skew = 1 / (2 * sin(theta)) * (R - R.T)
+        w = asarray([skew[2, 1], skew[0, 2], skew[1, 0]])
+
+    if decomposed:
+        return w, theta
+
+    return skew * theta
+
+def mexp(w : ndarray, theta : float):
+
+    skew = asarray([
+        [0, -w[2], w[1]],
+        [w[2], 0, -w[0]],
+        [-w[1], w[0], 0]
+    ])
+
+    sin_t, cos_t = sin(theta), cos(theta)
+
+    # Rotation matrix equal to e ** ([w] * theta)
+    return eye(3) + sin_t * skew + (1 - cos_t) * (skew @ skew)
 
 def texp(S : ndarray, theta : float, *, decomposed : bool = False):
     """Calculate the transformation matrix exponential e ** ([S] * theta).
@@ -46,7 +95,7 @@ def texp(S : ndarray, theta : float, *, decomposed : bool = False):
     T, T[:3, :3], T[:3, 3] = eye(4), R, p
     return T
 
-def tlog(*T : ndarray | Tuple[ndarray, ndarray], vector = False):
+def tlog(*T : Union[ndarray, Tuple[ndarray, ndarray]], vector = False):
     """Calculate the matrix logaritm of a transformation matrix.
 
     Args:
@@ -116,7 +165,7 @@ def tinv(T):
     Ti, Ti[:3, :3], Ti[:3, 3] = eye(4), Rt, -Rt @ p
     return Ti
 
-def tadj(*T : ndarray | Tuple[ndarray, ndarray]):
+def tadj(*T : Union[ndarray, Tuple[ndarray, ndarray]]):
     """Calculate the adjoint representation of a transformation matrix.
 
     Args:
@@ -243,7 +292,8 @@ def newton_raphson(
         max_iterations: The maximum number of iterations to perform.
 
     Returns:
-        The joint parameters theta of the screws to the desired configuration.
+        The joint parameters theta of the screws to the desired configuration
+        on convergence, or None if failed to converge.
     """
     assert isinstance(screws, ndarray)
     assert len(screws.shape) == 2
@@ -261,11 +311,59 @@ def newton_raphson(
 
         v, w = V[:3], V[3:]
         if norm(w) < w_tolerance and norm(v) < v_tolerance:
-            break
+            return theta
 
         theta = theta + pinv(jacobian(screws, theta, body = body)) @ V
 
-    return theta
+    return None
+
+def inverse_kinematics(
+        end_effector_pos : list,
+        link_length : list
+    ):
+    """Calculate the joint positions from an end effector configuration.
+    
+    Args:
+        pose: The end effector configuration.
+        lengths: The lengths of each links.
+
+    Returns:
+        The angles of each joint to the end effector.
+    """
+    # Define variables (Don't exceed robot arm length)
+    # Coordinates of end-effector (cubes)
+    x = end_effector_pos[0] # x-coordinate of end-effector
+    y = end_effector_pos[1] # y-coordinate of end-effector
+    z = end_effector_pos[2] #z-coordinate of end-effector
+    #*****^^^This will be replaced by subscriber/publisher***********# 
+
+    alpha = pi/2 # angle of gripper (0 to 90), set to 90
+
+    # Dimentsions of the robot (in mm)
+    L1 = link_length[0]
+    L2 = link_length[1]
+    L3 = link_length[2]
+    L4 = link_length[3]
+
+    # Position of joint 3
+    px = x - L4*cos(alpha) #joint 3 x coordinate
+    py = y - L4*sin(alpha) #joint 3 y coordinate
+    pz = z #joint 3 z coordinate
+
+    C_theta_2 = (px**2+py**2-L1**2-L2**2)/(2*L1*L2) 
+
+    #Angle Calculations (in radians)
+    theta_1 = arctan2(y,x)
+    theta_3 = arctan2(C_theta_2,-sqrt(1-C_theta_2**2))
+    theta_2 = (arctan2(py,px)-arctan2(L1+L2*cos(theta_3),L2*sin(theta_3)))
+    theta_4 = alpha - theta_2 - theta_3
+    #Update angles
+    theta_2 = (pi/2)-theta_2
+    theta_3 = -theta_3
+
+    # Publish thetas to the robot
+    # return list of thetas
+    return [theta_1, theta_2, theta_3,theta_4]
 
 def test_space_jacobian():
     screws = asarray([
@@ -426,27 +524,53 @@ def test_newton_raphson_body():
     if not (abs(result - expected) < 1e-5).all():
         raise AssertionError(f"\n{result}\n!=\n{expected}")
 
+def test_analytical_inverse_kinematics():
+    from robot import carousel
+    from math import radians, degrees
+
+    # end_effector_pos = [150,60,70] #Change this for anything within the limit
+    # link_lengths = [75,115,95,85]
+    # inverse_kinematics(end_effector_pos, link_lengths)#This prints the angles, just for looking
+
+    theta0 = [
+        radians(0),
+        radians(45),
+        radians(45),
+        radians(45),
+    ]
+    print('theta0: ' + ', '.join([f'{round(degrees(t), 2)}' for t in theta0]))
+
+    p0 = poe(carousel.M, carousel.screws, theta0)[1]
+    print('p0: ' + ', '.join([f'{round(x, 2):2}' for x in p0]))
+
+    theta1 = inverse_kinematics(p0, carousel.L)
+    print('theta1: ' + ', '.join([f'{round(degrees(t), 2)}' for t in theta1]))
+
+    p1 = poe(carousel.M, carousel.screws, theta1)[1]
+    print('p1: ' + ', '.join([f'{round(x, 2)}' for x in p1]))
+
 def test_explodes():
     from modern_robotics import IKinSpace, FKinSpace
     from math import radians
 
     M = asarray([
-        [1, 0, 0, 2],
+        [1, 0, 0, 3],
         [0, 1, 0, 0],
         [0, 0, 1, 0],
         [0, 0, 0, 0]
     ])
     screws = asarray([
-        asarray([0, 0, 1, 0, 0, 0]).T,
-        asarray([0, 0, 1, 0, 1, 0]).T,
-        asarray([0, 0, 1, 0, 2, 0]).T
-    ])
+        asarray([0, 0, 1, 0, 0, 0]),
+        asarray([0, 0, 1, 0, 1, 0]),
+        asarray([0, 0, 1, 0, 2, 0])
+    ]).T
 
     initial_theta = asarray([0, 0, 0])
     final_theta = asarray([0, radians(10), 0])
 
-    T = FKinSpace(M, screws.T, final_theta)
-    print(IKinSpace(screws.T, M, T, initial_theta, 0.01, 0.001))
+    T = FKinSpace(M, screws, final_theta)
+    print(T)
+    print(IKinSpace(screws, M, T, initial_theta, 0.01, 0.001))
 
 if __name__ == '__main__':
     test_space_jacobian()
@@ -455,4 +579,4 @@ if __name__ == '__main__':
     test_poe_body()
     test_newton_raphson_space()
     test_newton_raphson_body()
-    # test_explodes()
+    test_analytical_inverse_kinematics()

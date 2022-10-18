@@ -1,7 +1,7 @@
 from calendar import c
 import rospy as ros
 import math
-from ..topics import Topics
+from utility.topics import Topics
 
 class Carousel:
     """The carousel logic controller node.

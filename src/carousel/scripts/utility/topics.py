@@ -2,9 +2,9 @@ import rospy as ros
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable
+from typing import Callable, Any
 
-from std_msgs.msg import Float32, ColorRGBA
+from std_msgs.msg import Float32, ColorRGBA, Header
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 
@@ -12,7 +12,7 @@ from sensor_msgs.msg import JointState
 class Topic:
     """A general topic used by the carousel."""
     string : str = None
-    type = None
+    type : Any = None
 
     def subscriber(self, callback : Callable):
         """Create and return a subscriber to this topic.
@@ -37,7 +37,7 @@ class Topic:
         """
         return ros.Publisher(self.string, self.type, queue_size = queue_size)
 
-class Topics(Enum):
+class Topics:
     """A collection of topics used for communication between nodes in the
     carousel code."""
 
