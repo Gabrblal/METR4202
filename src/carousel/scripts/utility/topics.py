@@ -64,13 +64,13 @@ class Topics:
     # Topic about the fiducial information provided by the aruco library
     fiducial_transforms = Topic('fiducial_transforms', FiducialTransformArray)
 
-    # Topic about the corrected frame transforms to the home frame {0}
+    # Topic about the corrected frame transforms to the home frame {0}.
     correct_frames = Topic('correct_frame', FiducialTransformArray)
 
     # Topic about the colour of the block.
     block_colour = Topic('block_colour', String, queue_size=10)
 
-    # Topic about 
+    # Topic about image colour that camera is reading.
     serial = 31701651
     colour_info = Topic(f'ximea_cam/ximea_{serial}/image_raw', Image)
 
