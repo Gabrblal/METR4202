@@ -6,7 +6,7 @@ from typing import Callable, Any
 
 from std_msgs.msg import Float32, ColorRGBA, Header, String
 from geometry_msgs.msg import Pose
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Image
 from fiducial_msgs.msg import FiducialTransformArray
 
 @dataclass
@@ -61,10 +61,16 @@ class Topics:
     # Topic about the desired joint states provided by the dynamixel library.
     desired_joint_states = Topic('desired_joint_states', JointState)
 
-    # TODO: I don't think we need this
+    # Topic about the fiducial information provided by the aruco library
     fiducial_transforms = Topic('fiducial_transforms', FiducialTransformArray)
 
+    # Topic about the corrected frame transforms to the home frame {0}
     correct_frames = Topic('correct_frame', FiducialTransformArray)
 
-    block_colour = Topic('block_colour', String)
+    # Topic about the colour of the block.
+    block_colour = Topic('block_colour', String, queue_size=10)
+
+    # Topic about 
+    serial = 31701651
+    colour_info = Topic(f'ximea_cam/ximea_{serial}/image_raw', Image)
 
