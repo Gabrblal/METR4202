@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "array": "cpp",
+        "iostream": "cpp",
+        "random": "cpp",
+        "cmath": "cpp",
+        "complex": "cpp",
+        "limits": "cpp"
+    }
+}

@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Any
 
-from std_msgs.msg import Float32, ColorRGBA, Header
+from std_msgs.msg import Float32, ColorRGBA, Header, String
 from geometry_msgs.msg import Pose
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Image
+from fiducial_msgs.msg import FiducialTransformArray
 
 @dataclass
 class Topic:
@@ -33,7 +34,7 @@ class Topic:
             queue_size: The size of the message queue.
 
         Returns:
-            A publisher to this topic.
+            A publisher to this topic.FiducialTransformArray)
         """
         return ros.Publisher(self.string, self.type, queue_size = queue_size)
 
@@ -46,7 +47,7 @@ class Topics:
     box = Topic('carousel_box', Pose)
 
     # Topic about the maximum colour observed by the camera.
-    max_colour = Topic('carousel_colour', ColorRGBA)
+    # max_colour = Topic('carousel_colour', ColorRGBA)
 
     # Topic about the real life end effector configuration.
     effector = Topic('carousel_effector', Pose)
@@ -59,3 +60,18 @@ class Topics:
 
     # Topic about the desired joint states provided by the dynamixel library.
     desired_joint_states = Topic('desired_joint_states', JointState)
+
+    # Topic about the fiducial information provided by the aruco library
+    fiducial_transforms = Topic('fiducial_transforms', FiducialTransformArray)
+
+    # Topic about the corrected frame transforms to the home frame {0}.
+    correct_frames = Topic('correct_frame', FiducialTransformArray)
+
+    # Topic about the colour of the block.
+    # block_colour = Topic('block_colour', ColorRGBA)
+    block_colour = Topic('block_colour', String)
+
+    # Topic about image colour that camera is reading.
+    serial = 31701651
+    colour_info = Topic(f'ximea_ros/ximea_{serial}/image_raw', Image)
+
