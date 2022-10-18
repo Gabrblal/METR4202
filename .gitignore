@@ -3,6 +3,7 @@ devel/*
 logs/*
 .catkin_tools/*
 package/*
+metr4202_milestone/*
 
 # Dependency packages
 src/ximea_ros_cam

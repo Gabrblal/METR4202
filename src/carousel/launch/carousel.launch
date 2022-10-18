@@ -15,4 +15,8 @@
 	</node>
 
     <node name="carouselTrajectory" pkg="carousel" type="trajectory.py"></node>
+
+	<!-- Start the gripper node. -->
+	<node name="carouselGripperNode" pkg="carousel" type="gripper.py" output="screen"></node>
+
 </launch>

@@ -1,5 +1,6 @@
 from functools import reduce
 from itertools import accumulate
+from math import atan2, radians, remainder, degrees
 from typing import Sequence, Tuple, Union
 
 from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
@@ -317,7 +318,17 @@ def newton_raphson(
 
     return None
 
-def inverse_kinematics(
+def angle_wrap(angle):
+    """Wrap an angle onto the interval [-pi, pi].
+
+    Args:
+        angle: The angle to wrap in radians.
+
+    Returns:
+        The wrapped angle."""
+    return remainder(angle, 2 * pi)
+
+def inverse_analytical_4R(
         end_effector_pos : list,
         link_length : list
     ):
@@ -330,40 +341,44 @@ def inverse_kinematics(
     Returns:
         The angles of each joint to the end effector.
     """
-    # Define variables (Don't exceed robot arm length)
-    # Coordinates of end-effector (cubes)
-    x = end_effector_pos[0] # x-coordinate of end-effector
-    y = end_effector_pos[1] # y-coordinate of end-effector
-    z = end_effector_pos[2] #z-coordinate of end-effector
-    #*****^^^This will be replaced by subscriber/publisher***********# 
 
-    alpha = pi/2 # angle of gripper (0 to 90), set to 90
+    # Coordinates of end-effector (cubes)
+    x, y, z = end_effector_pos
+
+    alpha = -pi/2 + pi / 10 # angle of gripper (0 to 90), set to 90 [radians]
 
     # Dimentsions of the robot (in mm)
-    L1 = link_length[0]
-    L2 = link_length[1]
-    L3 = link_length[2]
-    L4 = link_length[3]
+    L1, L2, L3, L4 = link_length
 
     # Position of joint 3
-    px = x - L4*cos(alpha) #joint 3 x coordinate
-    py = y - L4*sin(alpha) #joint 3 y coordinate
-    pz = z #joint 3 z coordinate
+    pxy = sqrt(x**2 + y**2) - L4*cos(alpha) 
+    pz = z - L4*sin(alpha) - L1 #joint 3 y coordinate
 
-    C_theta_2 = (px**2+py**2-L1**2-L2**2)/(2*L1*L2) 
+    C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
 
     #Angle Calculations (in radians)
-    theta_1 = arctan2(y,x)
-    theta_3 = arctan2(C_theta_2,-sqrt(1-C_theta_2**2))
-    theta_2 = (arctan2(py,px)-arctan2(L1+L2*cos(theta_3),L2*sin(theta_3)))
-    theta_4 = alpha - theta_2 - theta_3
+    theta_1 = angle_wrap(atan2(x, y))
+    theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
+    theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
+    theta_4 = angle_wrap((alpha - theta_2 - theta_3))
+
     #Update angles
-    theta_2 = (pi/2)-theta_2
+    theta_1 = -theta_1
+    theta_2 = pi/2-theta_2
     theta_3 = -theta_3
+    theta_4 = theta_4
+
+    # If theta_1 goes further than +- 90 degrees, FLIP!!
+    if not (-pi/2 < theta_1 < pi/2):
+        theta_2 = -theta_2 # Joint 2 flips
+        theta_3 = -theta_3 # Joint 3 flips
+        theta_4 = -theta_4 # Joint 4 flips
+        theta_1 = angle_wrap(theta_1 + pi)
+
 
     # Publish thetas to the robot
     # return list of thetas
-    return [theta_1, theta_2, theta_3,theta_4]
+    return [theta_1, theta_2, theta_3, theta_4]
 
 def test_space_jacobian():
     screws = asarray([
@@ -533,18 +548,20 @@ def test_analytical_inverse_kinematics():
     # inverse_kinematics(end_effector_pos, link_lengths)#This prints the angles, just for looking
 
     theta0 = [
-        radians(0),
         radians(45),
         radians(45),
         radians(45),
+        radians(90),
     ]
     print('theta0: ' + ', '.join([f'{round(degrees(t), 2)}' for t in theta0]))
 
     p0 = poe(carousel.M, carousel.screws, theta0)[1]
     print('p0: ' + ', '.join([f'{round(x, 2):2}' for x in p0]))
-
-    theta1 = inverse_kinematics(p0, carousel.L)
+    
+    theta1 = inverse_kinematics([-124.968, 124.968, 26.7315], carousel.L)
+    print(theta1)
     print('theta1: ' + ', '.join([f'{round(degrees(t), 2)}' for t in theta1]))
+    #print('theta1: ' + ', '.join([f'{round (t, 2)}' for t in theta1]))
 
     p1 = poe(carousel.M, carousel.screws, theta1)[1]
     print('p1: ' + ', '.join([f'{round(x, 2)}' for x in p1]))
