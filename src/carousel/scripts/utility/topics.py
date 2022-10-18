@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Any
 
-from std_msgs.msg import Float32, ColorRGBA, Header
+from std_msgs.msg import Float32, ColorRGBA, Header, String
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState
 from fiducial_msgs.msg import FiducialTransformArray
@@ -47,7 +47,7 @@ class Topics:
     box = Topic('carousel_box', Pose)
 
     # Topic about the maximum colour observed by the camera.
-    max_colour = Topic('carousel_colour', ColorRGBA)
+    # max_colour = Topic('carousel_colour', ColorRGBA)
 
     # Topic about the real life end effector configuration.
     effector = Topic('carousel_effector', Pose)
@@ -61,6 +61,10 @@ class Topics:
     # Topic about the desired joint states provided by the dynamixel library.
     desired_joint_states = Topic('desired_joint_states', JointState)
 
+    # TODO: I don't think we need this
     fiducial_transforms = Topic('fiducial_transforms', FiducialTransformArray)
 
     correct_frames = Topic('correct_frame', FiducialTransformArray)
+
+    block_colour = Topic('block_colour', String)
+
