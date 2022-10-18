@@ -68,9 +68,10 @@ class Topics:
     correct_frames = Topic('correct_frame', FiducialTransformArray)
 
     # Topic about the colour of the block.
-    block_colour = Topic('block_colour', String, queue_size=10)
+    # block_colour = Topic('block_colour', ColorRGBA)
+    block_colour = Topic('block_colour', String)
 
     # Topic about image colour that camera is reading.
     serial = 31701651
-    colour_info = Topic(f'ximea_cam/ximea_{serial}/image_raw', Image)
+    colour_info = Topic(f'ximea_ros/ximea_{serial}/image_raw', Image)
 

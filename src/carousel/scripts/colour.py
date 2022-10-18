@@ -1,11 +1,11 @@
 #! /usr/bin/env python
 
-import imghdr
 import rospy
 import cv2
 
 from utility.topics import Topics
 from sensor_msgs.msg import Image
+from std_msgs.msg import ColorRGBA, String
 from cv_bridge import CvBridge, CvBridgeError
 
 
@@ -30,7 +30,26 @@ class Colour:
         g = bgr[1]
         b = bgr[0]
 
-        print(f'red: {r} \n green: {g} \n blue: {b}')
+        colour = String
+        if r > 200:
+            if g > 200:
+                colour = "yellow"
+            else:
+                colour = "red"
+        elif g > 200:
+            colour = "green"
+        elif b > 150:
+            colour = "blue"
+        else:
+            colour = "no block found"
+
+        rospy.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
+
+        # colour = ColorRGBA()
+        # colour.r = r
+        # colour.g = g
+        # colour.b = b
+        self._colour_pub.publish(colour)
 
     def main(self):
         rospy.spin()
@@ -38,3 +57,12 @@ class Colour:
 if __name__ == "__main__":
     rospy.init_node('colour_node', anonymous=True)
     Colour().main()
+    # colour = Colour()
+    # try:
+    #     while not rospy.is_shutdown():
+    #         if colour._img is not None:
+    #             cv2.imshow("Image", colour._img)
+    #             cv2.waitKey(1)
+    # except KeyboardInterrupt:
+    #     print("shutting down")
+    # cv2.destroyAllWindows()

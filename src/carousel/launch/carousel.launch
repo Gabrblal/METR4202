@@ -12,6 +12,8 @@
 
 	<node name="carouselCamera" pkg="carousel" type="camera.py" output="screen"></node> -->
 
+	<node name="ColourNode" pkg="carousel" type="colour.py"></node>
+
     <!-- Start the dynamixel driver node for interfacing with the dynamixel motors-->
 	<!-- <node name="dynamixel_interface_controller_node" pkg="dynamixel_interface" type="dynamixel_interface_controller_node" output="screen">
 		<rosparam command="load" file="$(find dynamixel_interface)/config/controller_config.yaml" />

@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
     yellow_bgr.b = 0;
 
 
-    char* strings[4] = {
+    const char* strings[4] = {
         "RED",
         "GREEN",
         "BLUE",
