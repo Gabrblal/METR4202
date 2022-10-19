@@ -1,8 +1,10 @@
 #! /usr/bin/python3
 
 #imports if needed
-from carousel.scripts.utility.kinematics import poe
+from utility.kinematics import poe
 import rospy as ros
+from modern_robotics import FKinSpace
+import numpy as np
 
 from utility.robot import carousel
 from utility.topics import Topics, JointState, Pose
@@ -18,7 +20,13 @@ if __name__ == '__main__':
     # the decomposed = true is giving seperated rotation and position matrix's
     def _callBack(message : JointState):
         # put theta in form that poe wants
-        R, p = poe(carousel.M, carousel.screws, message.position, decomposed = True)
+
+        name = message.name
+        position = message.position
+
+        angles = [position[name.index(j)] for j in ['joint_1', 'joint_2', 'joint_3', 'joint_4']]
+
+        R, p = poe(carousel.M, carousel.screws, angles, decomposed = True)
     
         pose = Pose()
         pose.position.x = p[0]
@@ -28,6 +36,10 @@ if __name__ == '__main__':
         pose.orientation.y = 0
         pose.orientation.z = 0
         pose.orientation.w = 0
+
+        # ros.loginfo(f"{np.rad2deg(angles)}")
+        # ros.loginfo(f"{message.joints}")
+        ros.loginfo(f"{(p[0], p[1], p[2])}")
 
         # publish p
         effector_pub.publish(pose)

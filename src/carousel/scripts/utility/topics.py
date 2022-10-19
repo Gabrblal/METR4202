@@ -59,3 +59,6 @@ class Topics:
 
     # Topic about the desired joint states provided by the dynamixel library.
     desired_joint_states = Topic('desired_joint_states', JointState)
+
+    # Topic about the joint states provided by the dynamixel library.
+    joint_states = Topic('joint_states', JointState)
