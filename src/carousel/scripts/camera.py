@@ -15,9 +15,9 @@ class Camera:
         self._fiducial_pub = Topics.correct_frames.publisher()
         self._fiducial_sub = Topics.fiducial_transforms.subscriber(self._callback)
 
-        self._offset = [-90, 80, 0]
+        self._offset = [0, 80, 0]
         self._T_ch = None
-        self._home_id = 1
+        self._home_id = 2
 
     def _callback(self, data):
 
@@ -31,6 +31,7 @@ class Camera:
         if transforms[0].fiducial_id == self._home_id:
             if self._T_ch is None:
                 self._T_ch = self._converter(transforms[0])
+                ros.loginfo('Registered home position')
             transforms.pop(0)
         elif self._T_ch is None:
             return
@@ -51,10 +52,10 @@ class Camera:
 
             r = fiducial.transform.rotation
             p = fiducial.transform.translation
-            # ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
+            ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
 
             block_size = 32
-            fiducial.transform.translation.x = x - block_size/2
+            fiducial.transform.translation.x = x #- block_size/2
             fiducial.transform.translation.y = y
             fiducial.transform.translation.z = z
 

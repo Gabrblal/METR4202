@@ -347,7 +347,15 @@ def inverse_analytical_4R(
     # Coordinates of end-effector (cubes)
     x, y, z = end_effector_pos
 
-    alpha = -pi/2 + pi/10 # angle of gripper (0 to 90), set to 90 [radians]
+    # alpha should be changed to a parameter.
+    # the logic controller should change the alpha angle based
+    # on whether the block is inside it's radius or not
+    if y > 190:
+        alpha = -pi/4 + pi/10
+    else:
+        alpha = pi/2 + pi/10
+
+    # alpha = -pi/2 + pi/10 # angle of gripper (0 to 90), set to 90 [radians]
 
     # Dimentsions of the robot (in mm)
     L1, L2, L3, L4 = link_length

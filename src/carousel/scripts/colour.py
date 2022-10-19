@@ -31,19 +31,19 @@ class Colour:
         b = bgr[0]
 
         colour = String
-        if r > 200:
-            if g > 200:
+        if r > 150 and b < 100:
+            if g > 150:
                 colour = "yellow"
             else:
                 colour = "red"
-        elif g > 200:
+        elif g > 150 and r < 140 and b < 100:
             colour = "green"
-        elif b > 150:
+        elif b > 100 and r < 100:
             colour = "blue"
         else:
             colour = "no block found"
 
-        # rospy.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
+        rospy.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
 
         # colour = ColorRGBA()
         # colour.r = r
