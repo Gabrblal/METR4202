@@ -114,7 +114,7 @@ class CarouselTrajectory:
                 p0 + vector * 0.66,
                 p1
             ],
-            Linear(now, 15)
+            Linear(now, 2)
             # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
         )
 

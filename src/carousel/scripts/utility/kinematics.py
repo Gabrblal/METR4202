@@ -347,7 +347,7 @@ def inverse_analytical_4R(
     # Coordinates of end-effector (cubes)
     x, y, z = end_effector_pos
 
-    alpha = 0 # angle of gripper (0 to 90), set to 90 [radians]
+    alpha = -pi/2 + pi/10 # angle of gripper (0 to 90), set to 90 [radians]
 
     # Dimentsions of the robot (in mm)
     L1, L2, L3, L4 = link_length

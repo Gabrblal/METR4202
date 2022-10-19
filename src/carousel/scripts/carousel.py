@@ -137,8 +137,13 @@ class Search(State):
         mu = average(ps, axis = 0).reshape([3, 1])
         distances = norm(subtract(ps, mu.reshape([3, 1]).T), axis = 0)
 
+        ros.loginfo(f'ps: {ps}')
+        ros.loginfo(f'mu: {mu}')
+
         # Sort the cubes in descending order by distance away from the cluster.
         ros.loginfo(f'Cubes: {cubes}')
+        ros.loginfo(f'{distances}')
+        ros.loginfo(f'Minimum: {distances.argmin()}')
 
         return cubes[distances.argmin()]
 
@@ -169,7 +174,7 @@ class Search(State):
 
             ros.loginfo(f'Selected cube {self.machine._cube[self.machine._best_cube]}.')
 
-            position = self.machine._cube[self.machine._best_cube][0] + asarray([0, 0, 20])
+            position = self.machine._cube[self.machine._best_cube][0] + asarray([0, 0, 40])
             ros.loginfo(f'Cube at {tuple(position)}.')
 
             self.machine._cube_lock.release()
@@ -224,7 +229,6 @@ class PickUp(State):
     def main(self):
         """main loop"""
         ros.loginfo(f'Entered pickup state at stage {self._stage}.')
-        return State.Search()
 
         percent = Float32()
 
@@ -237,7 +241,7 @@ class PickUp(State):
             ros.sleep(0.5)
 
             self._effector_lock.acquire()
-            position = self.machine._effector_position + asarray([0, 0, -40])
+            position = self.machine._effector_position + asarray([0, 0, -11])
             self._effector_lock.release()
 
             return State.Move(position, PickUp(stage = 1))
