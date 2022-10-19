@@ -6,6 +6,8 @@ from numpy import ndarray, asarray, piecewise, logical_and, eye
 
 from .kinematics import mexp, mlog
 
+import rospy as ros
+
 class Parameterisation(ABC):
 
     @abstractmethod
@@ -75,12 +77,17 @@ class Trajectory:
 class Linear(Parameterisation):
 
     def __init__(self, start, duration):
+        self._start = start
         self._duration = duration
-        self._m = 1 / duration
-        self._c = start
+        self._end = start + duration
 
     def __call__(self, t):
-        return self._m * t + self._c
+        if t > self._end:
+            t = self._end
+        elif t < self._start:
+            t = self._start
+
+        return (t - self._start) / self._duration
 
     def duration(self):
         return self._duration
@@ -317,4 +324,5 @@ def test_trajectory():
 
 if __name__ == '__main__':
     plot_spline_trajectory()
+    # print(Linear(1665115075.1237726, 1665115175.1237726)(1665115075.1237726))
     # test_interpolated_rotation()
