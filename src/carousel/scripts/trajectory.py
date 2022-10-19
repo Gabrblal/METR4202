@@ -13,7 +13,7 @@ import utility.robot as robot
 from utility.topics import Topics, JointState, Header, Pose
 
 from utility.trajectory import Spline, SCurve, Linear
-from utility.kinematics import inverse_kinematics, newton_raphson
+from utility.kinematics import inverse_analytical_4R, newton_raphson
 
 class CarouselTrajectory:
     """Node responsible for handling the trajectory of the end effector by
@@ -104,14 +104,14 @@ class CarouselTrajectory:
 
         # Vertical offset proportional to the distance travelled along the
         # trajectory.
-        offset = asarray([0, 0, norm(p0 - p1) / 5])
+        vector = p1 - p0
 
         now = ros.get_time()
         self._trajectory = Spline(
             [
                 p0,
-                p0 + offset ,
-                p1 + offset ,
+                p0 + vector * 0.33,
+                p0 + vector * 0.66,
                 p1
             ],
             Linear(now, 2)
@@ -153,7 +153,7 @@ class CarouselTrajectory:
             asarray([p.x, p.y, p.z])
         )
 
-        ros.loginfo(f'Got end effector position {self._current[1]}')
+        # ros.loginfo(f'Got end effector position {self._current[1]}')
 
         if regenerate:
             self._regenerate_trajectory(self._current, self._desired)
@@ -165,6 +165,7 @@ class CarouselTrajectory:
         published.
         """
         self._lock.acquire()
+        ros.loginfo(f'Got message')
 
         if not isinstance(message, Pose):
             ros.logwarn("CarouselTrajectory desired effector not Pose.")
@@ -184,6 +185,11 @@ class CarouselTrajectory:
         if self._desired is None:
             self._desired = new
 
+            if self._current is not None:
+                self._regenerate_trajectory(self._current, new)
+                self._lock.release()
+                return
+
         if not self._current:
             ros.loginfo("Current position unknown. Not regenerating.")
             self._lock.release()
@@ -194,7 +200,7 @@ class CarouselTrajectory:
 
         # If the change in desired position has reached the threshold, then
         # recalculate the trajectory.
-        if not norm(new[1] - old[1]) > self._threshold:
+        if norm(new[1] - old[1]) > self._threshold:
             self._regenerate_trajectory(self._current, new)
         else:
             ros.loginfo(
@@ -219,7 +225,7 @@ class CarouselTrajectory:
                 header = Header(stamp = ros.Time.now()),
                 name = self._joint_names,
                 position = theta,
-                velocity = [0.5, 0.5, 0.5, 0.5]
+                velocity = [1.0, 1.0, 1.0, 1.0]
             )
         )
 
@@ -271,7 +277,7 @@ class CarouselTrajectory:
         Returns:
             The joint parameters of the robot joints.
         """
-        return inverse_kinematics(p, self._link_lengths)
+        return inverse_analytical_4R(p, self._link_lengths)
 
     def main(self):
         """The main trajectory loop."""
