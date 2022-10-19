@@ -53,7 +53,8 @@ class Camera:
             p = fiducial.transform.translation
             # ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
 
-            fiducial.transform.translation.x = x
+            block_size = 32
+            fiducial.transform.translation.x = x - block_size/2
             fiducial.transform.translation.y = y
             fiducial.transform.translation.z = z
 
