@@ -11,13 +11,8 @@ from utility.topics import Topics, JointState, Pose
 
 if __name__ == '__main__':
 
-    #subscribes to joint_states, see topics.py
     effector_pub = Topics.effector.publisher()
 
-    # use utility/kinematics/py to calculate, 
-    # with screws from robot.py this is what the carousel.M and carousel.screws is
-    # R, p = is a fancy python decomposing tuple, we want the p
-    # the decomposed = true is giving seperated rotation and position matrix's
     def _callBack(message : JointState):
         # put theta in form that poe wants
 
@@ -37,11 +32,6 @@ if __name__ == '__main__':
         pose.orientation.z = 0
         pose.orientation.w = 0
 
-        # ros.loginfo(f"{np.rad2deg(angles)}")
-        # ros.loginfo(f"{message.joints}")
-        ros.loginfo(f"{(p[0], p[1], p[2])}")
-
-        # publish p
         effector_pub.publish(pose)
 
     #publishes to effector, see topics.py
@@ -49,4 +39,3 @@ if __name__ == '__main__':
 
     ros.init_node('CarouselEndEffectorNode')
     ros.spin()
-
