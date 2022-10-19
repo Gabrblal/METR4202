@@ -14,12 +14,12 @@ class StateMachine:
 
             self._state.on_entry()
             next_state = self._state.main()
-            self._state_on_exit()
+            self._state.on_exit()
 
             if next_state is None:
                 break
 
-            self_state = next_state
+            self._state = next_state
 
 class State:
 
@@ -34,7 +34,7 @@ class State:
         """Options method to call when a state is entered"""
         pass
 
-    def on_exit():
+    def on_exit(self):
         """optional method to call when a state is exited"""
         pass
 

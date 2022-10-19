@@ -11,6 +11,8 @@ from utility.topics import Topics, JointState, Pose
 
 if __name__ == '__main__':
 
+    ros.loginfo("Started effector node.")
+
     effector_pub = Topics.effector.publisher()
 
     def _callBack(message : JointState):
@@ -32,6 +34,7 @@ if __name__ == '__main__':
         pose.orientation.z = 0
         pose.orientation.w = 0
 
+        # ros.loginfo("Publishing end effector.")
         effector_pub.publish(pose)
 
     #publishes to effector, see topics.py

@@ -43,7 +43,7 @@ class Colour:
         else:
             colour = "no block found"
 
-        rospy.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
+        # rospy.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
 
         # colour = ColorRGBA()
         # colour.r = r

@@ -15,7 +15,7 @@ class Camera:
         self._fiducial_pub = Topics.correct_frames.publisher()
         self._fiducial_sub = Topics.fiducial_transforms.subscriber(self._callback)
 
-        self._offset = [-80, 80, 0]
+        self._offset = [-90, 80, 0]
         self._T_ch = None
         self._home_id = 1
 
@@ -51,7 +51,7 @@ class Camera:
 
             r = fiducial.transform.rotation
             p = fiducial.transform.translation
-            ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
+            # ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
 
             fiducial.transform.translation.x = x
             fiducial.transform.translation.y = y
