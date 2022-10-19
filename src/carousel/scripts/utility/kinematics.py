@@ -7,6 +7,8 @@ from numpy import ndarray, asarray, eye, sin, cos, arccos, tan, trace, sqrt
 from numpy import zeros, pi, concatenate, vstack, abs, arctan2
 from numpy.linalg import norm, pinv
 
+import rospy as ros
+
 def mlog(R : ndarray, *, decomposed = False):
     """Calculate the logarithm of a rotation matrix.
     
@@ -345,7 +347,7 @@ def inverse_analytical_4R(
     # Coordinates of end-effector (cubes)
     x, y, z = end_effector_pos
 
-    alpha = -pi/2 + pi / 10 # angle of gripper (0 to 90), set to 90 [radians]
+    alpha = 0 # angle of gripper (0 to 90), set to 90 [radians]
 
     # Dimentsions of the robot (in mm)
     L1, L2, L3, L4 = link_length
@@ -359,14 +361,14 @@ def inverse_analytical_4R(
     #Angle Calculations (in radians)
     theta_1 = angle_wrap(atan2(x, y))
     theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
-    theta_2 = (atan2(pz,pxy)  -  atan2(L3*sin(theta_3),  L2+L3*cos(theta_3)))
+    theta_2 = (atan2(pz, pxy) - atan2(L3 * sin(theta_3), L2 + L3 * cos(theta_3)))
     theta_4 = angle_wrap((alpha - theta_2 - theta_3))
 
     #Update angles
     theta_1 = -theta_1
-    theta_2 = pi/2-theta_2
-    theta_3 = -theta_3
-    theta_4 = theta_4
+    theta_2 = theta_2 - pi/2
+    theta_3 = theta_3
+    theta_4 = -theta_4
 
     # If theta_1 goes further than +- 90 degrees, FLIP!!
     if not (-pi/2 < theta_1 < pi/2):
@@ -375,6 +377,7 @@ def inverse_analytical_4R(
         theta_4 = -theta_4 # Joint 4 flips
         theta_1 = angle_wrap(theta_1 + pi)
 
+    ros.loginfo(f'{end_effector_pos} -> {[round(degrees(t), 2) for t in [theta_1, theta_2, theta_3, theta_4]]}')
 
     # Publish thetas to the robot
     # return list of thetas
