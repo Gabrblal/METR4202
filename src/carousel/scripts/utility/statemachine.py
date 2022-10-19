@@ -13,7 +13,7 @@ class StateMachine:
             setattr(self._state, "machine", self)
 
             self._state.on_entry()
-            next_state = self_state.main()
+            next_state = self._state.main()
             self._state_on_exit()
 
             if next_state is None:
