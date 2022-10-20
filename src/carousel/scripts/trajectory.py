@@ -6,6 +6,7 @@ from typing import Sequence
 import rospy as ros
 from tf.transformations import euler_from_quaternion
 
+from scipy.spatial.transform import Rotation
 from numpy import asarray, ndarray, eye
 from numpy.linalg import norm
 
@@ -29,9 +30,8 @@ class CarouselTrajectory:
             M : ndarray,
             link_lengths : Sequence[float],
             joint_names : Sequence[str] = ('joint_1', 'joint_2', 'joint_3', 'joint_4'),
-            method = 'analytical',
             rate_max : int  = 100,
-            threshold  : int = 10
+            threshold  : int = 0
         ):
         """Create a new carousel poser.
 
@@ -61,6 +61,7 @@ class CarouselTrajectory:
 
         # The desired end effector configuration (R, p).
         self._desired = None
+        self._desired_pitch = None
 
         # The current end effector configuration (R, p).
         self._current = None
@@ -71,18 +72,10 @@ class CarouselTrajectory:
         # The last theta angle sent.
         self._last = None
 
-        if method == 'numerical':
-            self._inverse = self._inverse_numerical
-        elif method == 'random':
-            self._inverse = self._inverse_random
-        else:
-            self._inverse = self._inverse_analytical
-
         # Inputs are the desired end effector location and the locations of
         # the fiducial boxes.
         self._effector_sub = Topics.effector.subscriber(self._effector_callback)
         self._desired_sub = Topics.effector_desired.subscriber(self._desired_callback)
-        self._box_sub = Topics.box.subscriber(self._box_callback)
         self._joint_pub = Topics.desired_joint_states.publisher()
 
         ros.loginfo('Initialised trajectory node.')
@@ -99,8 +92,8 @@ class CarouselTrajectory:
         """
         ros.loginfo('Regenerating Trajectory!')
 
-        R0, p0 = Rp0
-        R1, p1 = Rp1
+        pitch0, p0 = Rp0
+        pitch1, p1 = Rp1
 
         # Vertical offset proportional to the distance travelled along the
         # trajectory.
@@ -114,18 +107,15 @@ class CarouselTrajectory:
                 p0 + vector * 0.66,
                 p1
             ],
-            Linear(now, 2)
+            Linear(now, 0.1)
             # SCurve.from_velocity_acceleration(now, 40 / 100, (40 / 100) ** 2)
         )
+        self._desired_pitch = pitch1
 
         ros.loginfo(
             f'Regeneration trajectory '
             f'{p0.flatten()} -> {p1.flatten()}'
-            f' between {now} and {now + 100}'
         )
-
-        ros.loginfo(f'Initial angles: {self._inverse(None, p0)}')
-        ros.loginfo(f'Final angles: {self._inverse(None, p1)}')
 
     def _effector_callback(self, message : Pose):
         """Callback for when a true end effector configuration is published."""
@@ -143,15 +133,11 @@ class CarouselTrajectory:
         q = message.orientation
         p = message.position
 
-        self._current = (
-            euler_from_quaternion([q.x, q.y, q.z, q.w]),
-            asarray([p.x, p.y, p.z])
-        )
+        _, pitch, _ = Rotation.from_quat(
+            [q.x, q.y, q.z, q.w]
+        ).as_euler('ZYX')
 
-        new = (
-            euler_from_quaternion([q.x, q.y, q.z, q.w]),
-            asarray([p.x, p.y, p.z])
-        )
+        self._current = (pitch, asarray([p.x, p.y, p.z]))
 
         # ros.loginfo(f'Got end effector position {self._current[1]}')
 
@@ -165,7 +151,6 @@ class CarouselTrajectory:
         published.
         """
         self._lock.acquire()
-        ros.loginfo(f'Got message')
 
         if not isinstance(message, Pose):
             ros.logwarn("CarouselTrajectory desired effector not Pose.")
@@ -175,12 +160,13 @@ class CarouselTrajectory:
         q = message.orientation
         p = message.position
 
-        new = (
-            euler_from_quaternion([q.x, q.y, q.z, q.w]),
-            asarray([p.x, p.y, p.z])
-        )
+        _, pitch, _ = Rotation.from_quat(
+            [q.x, q.y, q.z, q.w]
+        ).as_euler('ZYX')
 
-        ros.loginfo(f'Got desired position {new[1]}')
+        new = (pitch, asarray([p.x, p.y, p.z]))
+
+        ros.loginfo(f'Got desired position {new[1]} at pitch {pitch}')
 
         if self._desired is None:
             self._desired = new
@@ -210,10 +196,6 @@ class CarouselTrajectory:
 
         self._lock.release()
 
-    def _box_callback(self):
-        """Callback for when a new cube configuration is published."""
-        pass
-
     def _send_joint_states(self, theta : Sequence[float]):
         """Publishes a joint state message containing the angles of each joint.
 
@@ -228,56 +210,6 @@ class CarouselTrajectory:
                 velocity = [1.0, 1.0, 1.0, 1.0]
             )
         )
-
-    def _inverse_random(self, R : ndarray, p : ndarray):
-        """Get random theta values.
-
-        Args:
-            R: The rotation of the end effector.
-            p: The position of the end effector.
-
-        Returns:
-            The joint parameters of the robot joints.
-        """
-        from random import uniform
-        ros.sleep(0.5)
-        return [uniform(-1.5, 1.5) for _ in self._joint_names]
-
-    def _inverse_numerical(self, R : ndarray, p : ndarray):
-        """Get the analytical inverse kinematics.
-
-        Args:
-            R: The rotation of the end effector.
-            p: The position of the end effector.
-
-        Returns:
-            The joint parameters of the robot joints.
-        """
-        T, T[:3, :3], T[:3, 3] = eye(4), R, p
-
-        theta = newton_raphson(
-            self.robot.screws,
-            self.self.robot.M,
-            T,
-            self._last
-        )
-
-        if theta is None:
-            return self._last
-
-        return theta
-
-    def _inverse_analytical(self, R : ndarray, p : ndarray):
-        """Get the analytical inverse kinematics.
-
-        Args:
-            R: The rotation of the end effector.
-            p: The position of the end effector.
-
-        Returns:
-            The joint parameters of the robot joints.
-        """
-        return inverse_analytical_4R(p, self._link_lengths)
 
     def main(self):
         """The main trajectory loop."""
@@ -302,9 +234,10 @@ class CarouselTrajectory:
 
             self._lock.acquire()
             p = self._trajectory(ros.get_time())
+            pitch = self._desired_pitch
             self._lock.release()
 
-            theta = self._inverse(None, p)
+            theta = inverse_analytical_4R(p, self._link_lengths, pitch)
 
             # If theta was not able to be determined then don't do anything.
             self._send_joint_states(theta)
@@ -312,12 +245,11 @@ class CarouselTrajectory:
             self._rate.sleep()
 
 def main():
-    ros.init_node('carouselTrajectory')
+    ros.init_node('CarouselTrajectoryNode')
     carousel = CarouselTrajectory(
         robot.carousel.screws,
         robot.carousel.M,
-        robot.carousel.L,
-        method = 'analytical'
+        robot.carousel.L
     )
     carousel.main()
 

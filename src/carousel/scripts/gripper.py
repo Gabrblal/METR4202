@@ -67,10 +67,5 @@ class CarouselGripper:
         ros.spin()
 
 if __name__ == '__main__':
-
-    # TODO: Parse commandline arguments for minimum, maximum pwm and raspberry
-    # pi pin number.
-
-    n = len(sys.argv)
     ros.init_node('CarouselGripperNode')
     CarouselGripper().main()

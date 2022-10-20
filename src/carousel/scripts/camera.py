@@ -12,12 +12,13 @@ from utility.topics import Topics
 class Camera:
 
     def __init__(self):
-        self._fiducial_pub = Topics.correct_frames.publisher()
-        self._fiducial_sub = Topics.fiducial_transforms.subscriber(self._callback)
-
-        self._offset = [0, 80, 0]
+        self._cube_offset = np.asarray([0, 16, 0])
+        self._offset = np.asarray([0, 80, 7]) + self._cube_offset
         self._T_ch = None
         self._home_id = 2
+
+        self._fiducial_pub = Topics.correct_frames.publisher()
+        self._fiducial_sub = Topics.fiducial_transforms.subscriber(self._callback)
 
     def _callback(self, data):
 
@@ -52,10 +53,9 @@ class Camera:
 
             r = fiducial.transform.rotation
             p = fiducial.transform.translation
-            ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
+            # ros.loginfo(f'    ({p.x}, {p.y}, {p.z}) -> {x}, {y}, {z})')
 
-            block_size = 32
-            fiducial.transform.translation.x = x #- block_size/2
+            fiducial.transform.translation.x = x
             fiducial.transform.translation.y = y
             fiducial.transform.translation.z = z
 
@@ -91,5 +91,5 @@ class Camera:
         ros.spin()
 
 if __name__ == "__main__":
-    ros.init_node('luggage_info', anonymous=True)
+    ros.init_node('CarouselCameraTransformNode', anonymous=True)
     Camera().main()

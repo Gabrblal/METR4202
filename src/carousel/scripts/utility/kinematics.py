@@ -332,7 +332,8 @@ def angle_wrap(angle):
 
 def inverse_analytical_4R(
         end_effector_pos : list,
-        link_length : list
+        link_length : list,
+        alpha : float
     ):
     """Calculate the joint positions from an end effector configuration.
     
@@ -347,16 +348,6 @@ def inverse_analytical_4R(
     # Coordinates of end-effector (cubes)
     x, y, z = end_effector_pos
 
-    # alpha should be changed to a parameter.
-    # the logic controller should change the alpha angle based
-    # on whether the block is inside it's radius or not
-    if y > 190:
-        alpha = -pi/4 + pi/10
-    else:
-        alpha = pi/2 + pi/10
-
-    # alpha = -pi/2 + pi/10 # angle of gripper (0 to 90), set to 90 [radians]
-
     # Dimentsions of the robot (in mm)
     L1, L2, L3, L4 = link_length
 
@@ -364,12 +355,12 @@ def inverse_analytical_4R(
     pxy = sqrt(x**2 + y**2) - L4*cos(alpha) 
     pz = z - L4*sin(alpha) - L1 #joint 3 y coordinate
 
-    C_theta_2 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
+    cos_theta3 = (pxy**2 + pz**2 - L2**2 - L3**2) / (2 * L2 * L3) 
 
     #Angle Calculations (in radians)
     theta_1 = angle_wrap(atan2(x, y))
-    theta_3 = atan2(-sqrt(abs(1-C_theta_2**2)), C_theta_2)
-    theta_2 = (atan2(pz, pxy) - atan2(L3 * sin(theta_3), L2 + L3 * cos(theta_3)))
+    theta_3 = atan2(-sqrt(abs(1 - cos_theta3 ** 2)), cos_theta3)
+    theta_2 = atan2(pz, pxy) - atan2(L3 * sin(theta_3), L2 + L3 * cos(theta_3))
     theta_4 = angle_wrap((alpha - theta_2 - theta_3))
 
     #Update angles
@@ -385,7 +376,7 @@ def inverse_analytical_4R(
         theta_4 = -theta_4 # Joint 4 flips
         theta_1 = angle_wrap(theta_1 + pi)
 
-    ros.loginfo(f'{end_effector_pos} -> {[round(degrees(t), 2) for t in [theta_1, theta_2, theta_3, theta_4]]}')
+    ros.loginfo(f'Backwards: {[round(x, 2) for x in end_effector_pos]} -> {[round(degrees(t), 2) for t in [theta_1, theta_2, theta_3, theta_4]]}')
 
     # Publish thetas to the robot
     # return list of thetas
