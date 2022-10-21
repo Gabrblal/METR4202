@@ -376,7 +376,10 @@ def inverse_analytical_4R(
         theta_4 = -theta_4 # Joint 4 flips
         theta_1 = angle_wrap(theta_1 + pi)
 
-    ros.loginfo(f'Backwards: {[round(x, 2) for x in end_effector_pos]} -> {[round(degrees(t), 2) for t in [theta_1, theta_2, theta_3, theta_4]]}')
+    # ros.loginfo(
+    #     f'Backwards: {[round(x, 2) for x in end_effector_pos]} -> '
+    #     f'{[round(degrees(t), 2) for t in [theta_1, theta_2, theta_3, theta_4]]}'
+    # )
 
     # Publish thetas to the robot
     # return list of thetas

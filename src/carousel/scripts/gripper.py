@@ -43,7 +43,7 @@ class CarouselGripper:
         Args:
             percentage: If not None then the percentage to open the gripper
                 between 0 and 1 inclusive."""
-        pulsewidth = self._minimum_pwm + (self._maximum_pwm - self._minimum_pwm)*percentage
+        pulsewidth = self._minimum_pwm + (self._maximum_pwm - self._minimum_pwm) * percentage
         self._pi.set_servo_pulsewidth(self._pin, pulsewidth)
 
         ros.loginfo(f"Gripper percentage = {percentage} -> pwm = {pulsewidth}")

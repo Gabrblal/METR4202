@@ -12,8 +12,8 @@ from utility.topics import Topics
 class Camera:
 
     def __init__(self):
-        self._cube_offset = np.asarray([0, 16, 0])
-        self._offset = np.asarray([0, 80, 7]) + self._cube_offset
+        self._cube_offset = np.asarray([-10, 16, 0])
+        self._offset = np.asarray([0, 100, 7]) + self._cube_offset
         self._T_ch = None
         self._home_id = 2
 
@@ -22,12 +22,14 @@ class Camera:
 
     def _callback(self, data):
 
+        # Get the fiduicial transformation matricies. Do nothing if there are
+        # none.
         transforms = list(data.transforms)
-
         if not transforms:
             return
 
-        transforms.sort(key = lambda x : x.fiducial_id)
+        # Sort by the fiducial ID to identify to place the homing tag first.
+        transforms.sort(key = lambda x: x.fiducial_id)
 
         if transforms[0].fiducial_id == self._home_id:
             if self._T_ch is None:

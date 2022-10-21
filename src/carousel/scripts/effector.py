@@ -1,11 +1,10 @@
 #! /usr/bin/python3
 
-#imports if needed
-from utility.kinematics import poe
-import rospy as ros
-from modern_robotics import FKinSpace
-import numpy as np
+from math import degrees
 
+import rospy as ros
+
+from utility.kinematics import poe
 from utility.robot import carousel
 from utility.topics import Topics, JointState, Pose
 
@@ -31,8 +30,10 @@ if __name__ == '__main__':
 
         R, p = poe(carousel.M, carousel.screws, angles, decomposed = True)
 
-        from math import degrees
-        ros.loginfo(f'Forward: {[round(degrees(t), 2) for t in angles]} -> {[round(x, 2) for x in p]}.')
+        # ros.loginfo(
+        #     f'Forward: {[round(degrees(t), 2) for t in angles]} -> '
+        #     f'{[round(x, 2) for x in p]}.'
+        # )
 
         pose = Pose()
         pose.position.x = p[0]
