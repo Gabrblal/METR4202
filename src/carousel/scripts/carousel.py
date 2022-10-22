@@ -6,7 +6,7 @@ from threading import Lock
 
 import rospy as ros
 
-from numpy import ndarray, asarray, arctan2, pi, vstack, subtract, average
+from numpy import ndarray, asarray, arctan2, pi, vstack, subtract, average, sqrt
 from numpy.linalg import norm
 from scipy.spatial.transform import Rotation
 
@@ -65,10 +65,10 @@ class Carousel(StateMachine):
 
         # Mapping of colours to their dropoff locations.
         self._dropoff = {
-            'red': asarray([-200, -50, 0]),
-            'green': asarray([-50, -150, 0]),
-            'blue': asarray([50, -150, 0]),
-            'yellow': asarray([200, -50, 0]),
+            'red': asarray([-150, -50, 40]),
+            'green': asarray([-50, -150, 40]),
+            'blue': asarray([50, -150, 40]),
+            'yellow': asarray([150, -50, 40]),
         }
 
         # Input. The positions of the cubees and the end effector location.
@@ -116,9 +116,9 @@ class Carousel(StateMachine):
 
             # Set the cubes position, yaw from the origin and yaw of the cube.
             self._cube[id] = (
-                asarray([p.x, p.y, p.z]),
-                arctan2(p.y, p.x),
-                yaw
+                asarray([p.x, p.y, p.z]), # x,y z position
+                arctan2(p.y, p.x), # Yaw from robot to cube
+                yaw # Yaw of cube itself.
             )
 
         self._cube_lock.release()
@@ -146,19 +146,26 @@ class Search(State):
 
         Returns:
             If the platform has stopped rotating.
-        """     
-        ros.loginfo('Waiting for carousel to stop.')
+        """
 
         # Select the first cube to track its change in yaw.
         id = tuple(self.machine._cube.keys())[0]
 
-        # Get the yaw of the cube at two different times.
+        self.machine._cube_lock.acquire()
         yaw0 = self.machine._cube[id][2]
+        self.machine._cube_lock.release()
+
+        # Get the yaw of the cube at two different times.
         ros.sleep(self.machine._rotation_wait)
+
+        self.machine._cube_lock.acquire()
         yaw1 = self.machine._cube[id][2]
+        self.machine._cube_lock.release()
 
         # Get the difference in yaw.
         difference = angle_wrap(yaw0 - yaw1)
+
+        ros.loginfo(f'{yaw0} - {yaw1} = {difference} < {self.machine._rotation_threshold}')
 
         # The platform has stopped if the yaw has approximately not changed.
         return difference <= self.machine._rotation_threshold
@@ -170,13 +177,20 @@ class Search(State):
             The position, yaw to the cube and yaw of the cube of
             the most ideal cube to pickup.
         """
+        self.machine._cube_lock.acquire()
         ros.loginfo('Choosing cube.')
 
         # Get the fiducial cube identifiers.
         cubes = [key for key in self.machine._cube.keys()]
 
+        # If there is only one cube then try and pick it up.
+        if len(cubes) == 1:
+            self.machine._cube_lock.release()
+            return cubes[0]
+
         # Filter by orientation.
         for id in cubes:
+            position = self.machine._cube[id][0]
             yaw_to = self.machine._cube[id][1]
             yaw_of = self.machine._cube[id][2]
 
@@ -191,9 +205,17 @@ class Search(State):
             if error > self.machine._orientation_threshold:
                 cubes.pop(cubes.index(id))
                 ros.loginfo(f'Cube {id} eliminated for orientation error {error}.')
+                continue
 
+            # 
+            if norm(position[0:2]) > carousel.L[1] + carousel.L[2] + carousel.L[2] / sqrt(2):
+                cubes.pop(cubes.index(id))
+                ros.loginfo(f'Cube {id} elinated for too far.')
+                continue
+    
         # If no cubes are grabbable then return no desired cubes.
         if not cubes:
+            self.machine._cube_lock.release()
             return None
 
         # Calculate the distances away from the cube cluster centre.
@@ -202,7 +224,10 @@ class Search(State):
         distances = norm(subtract(ps, mu.reshape([3, 1]).T), axis = 0)
 
         # Get the cube furthest away from the cluster centre.
-        return cubes[distances.argmax()]
+        best = cubes[distances.argmax()]
+        self.machine._cube_lock.release()
+
+        return best
 
     def main(self):
         """Waits for the conveyor to stop moving, selects the best cube
@@ -218,13 +243,14 @@ class Search(State):
 
             # Wait until there are cubes to pickup.
             self.machine._cube_lock.acquire()
-            if not self.machine._cube:
-                self.machine._cube_lock.release()
+            no_cubes = not self.machine._cube
+            self.machine._cube_lock.release()
+
+            if no_cubes:
                 continue
 
             # Wait until the carousel has stopped.
             if not self._has_stopped():
-                self.machine._cube_lock.release()
                 continue
 
             ros.loginfo('Guessed conveyor stopped.')
@@ -234,18 +260,27 @@ class Search(State):
 
             # If there are no good cubes to pick up then continue searching.
             if self.machine._best_cube is None:
-                self.machine._cube_lock.release()
                 continue
 
-            ros.loginfo(f'Selected cube {self.machine._cube[self.machine._best_cube]}.')
+            ros.loginfo(f'Selected cube {self.machine._best_cube}.')
 
             # Set the pickup position to 20mm above the cube.
-            position = self.machine._cube[self.machine._best_cube][0] + asarray([0, 0, 20])
-            ros.loginfo(f'Cube at {tuple(position)}.')
-
+            self.machine._cube_lock.acquire()
+            position = self.machine._cube[self.machine._best_cube][0] 
             self.machine._cube_lock.release()
 
-            return State.Move(position, State.Track(), pitch = -pi / 4)
+            ros.loginfo(f'Pickup position at {tuple(position)}.')
+
+            if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
+                position = position + asarray([0, 0, 20])
+                pitch = -pi/4
+            else:
+                position = position + asarray([0, -10, 15])
+                pitch = -pi/2 + pi/40
+
+            ros.loginfo(f'Pickup position at {tuple(position)}.')
+            # return State.Track()
+            return State.Move(position, State.PickUp(), pitch = pitch)
 
 class Move(State):
     """State responsible for moving the end effector to a location and
@@ -338,9 +373,11 @@ class Track(State):
         self.machine._cube_lock.release()
 
         if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
+            position = position + asarray([0, 0, 20])
             pitch = -pi/4
         else:
-            pitch = -pi/2 + pi/10
+            position = position + asarray([0, 0, 20])
+            pitch = -pi/2 + pi/40
 
         error = min([
             abs(angle_wrap(yaw_to - yaw))
@@ -348,11 +385,13 @@ class Track(State):
         ])
 
         # If the yaw is fine to pick the cube up then pick it up.
-        if error < self.machine._orientation_threshold:
-            return State.PickUp()
+        # if error < self.machine._orientation_threshold:
+        #     return State.PickUp()
+
+        ros.loginfo('Orientation threshold not met.')
 
         # Hover 30mm above the cube.
-        position = position + asarray([0, -20, 30])
+        position = position # + asarray([0, -20, 30])
 
         return State.Move(position, self, pitch = pitch, wait = False)
 
@@ -386,6 +425,7 @@ class PickUp(State):
         ros.loginfo(f'Closing gripper.')
         percent.data = 0.0
         self.machine._gripper_pub.publish(percent)
+        ros.sleep(0.3)
 
         # With the box move up out of the way of the other cubes.
         # self.machine._effector_lock.acquire()
@@ -414,6 +454,19 @@ class ColourCheck(State):
 
             if ros.get_time() > timeout:
                 ros.loginfo('Timed out finding colour.')
+
+                ros.loginfo(f'Opening gripper.')
+                percent = Float32()
+                percent.data = 1.0
+                self.machine._gripper_pub.publish(percent)
+
+                # Don't go for a cube that dones't exit.
+                self.machine._colour_lock.acquire()
+                colour = None
+                self.machine._colour_lock.release()
+
+                self.machine._cube.pop(self.machine._best_cube)
+
                 return State.Move(
                     self.machine._home_position,
                     State.Search(),
@@ -424,10 +477,10 @@ class ColourCheck(State):
             colour = self.machine._colour
             self.machine._colour_lock.release()
 
-            ros.loginfo(f'Cube colour is {colour}.')
             if colour not in self.machine._dropoff.keys():
                 continue
 
+            ros.loginfo(f'Cube colour is {colour}.')
             position = self.machine._dropoff[colour]
             return State.Move(position, State.DropOff(), pitch = -pi/2)
 

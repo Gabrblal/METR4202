@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Any
 
-from std_msgs.msg import Float32, ColorRGBA, Header, String
+from std_msgs.msg import Float32, ColorRGBA, Header, String, Bool
 from geometry_msgs.msg import Pose
 from sensor_msgs.msg import JointState, Image
 from fiducial_msgs.msg import FiducialTransformArray
@@ -73,6 +73,9 @@ class Topics:
     # Topic about the colour of the block.
     # block_colour = Topic('block_colour', ColorRGBA)
     block_colour = Topic('block_colour', String)
+
+    # Topic to enable or disable rbg mode.
+    rgb_mode = Topic('ximea_ros/show_rgb', Bool)
 
     # Topic about image colour that camera is reading.
     serial = 31701651

@@ -3,7 +3,7 @@
 #include <ximea_cv/ximea_ros.hpp>
 #include <signal.h>
 
-bool rgb_toggle = false;
+bool rgb_toggle = true;
 
 void toggle_callback(std_msgs::Bool msg) {
 	rgb_toggle = msg.data;
@@ -27,10 +27,8 @@ int main(int argc, char** argv) {
 
     ros::NodeHandle nh_rgb;
 	ros::Subscriber sub_rgb;
-	XI_IMG_FORMAT img_format = img_formats[0];
-	std::string format = formats[0];
-
-	rgb_toggle = false;
+	XI_IMG_FORMAT img_format = img_formats[1];
+	std::string format = formats[1];
 
 	ximea_ros.init_camera_pub(serials);
 	ximea_ros.init_img_pub(serials);
@@ -84,7 +82,7 @@ int main(int argc, char** argv) {
 			}
 			if (rgb_flag != rgb_toggle) {
 				rgb_flag = rgb_toggle;
-				if (!rgb_toggle) {
+				if (!rgb_flag) {
 					img_format = img_formats[0];
 					format = formats[0];
 				} else {

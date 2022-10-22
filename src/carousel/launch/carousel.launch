@@ -10,11 +10,12 @@
 		<arg name="dictionary" value="0"/>
 	</include>
 
-	<!-- Start the camera node. -->
-	<node name="carouselCamera" pkg="carousel" type="camera.py" output="screen"></node> -->
 
 	<!-- Start the colour node. -->
 	<node name="ColourNode" pkg="carousel" type="colour.py" output="screen"></node>
+
+	<!-- Start the camera node. -->
+	<node name="carouselCamera" pkg="carousel" type="camera.py" output="screen"></node> -->
 
     <!-- Start the dynamixel driver node for interfacing with the dynamixel motors-->
 	<node name="dynamixel_interface_controller_node" pkg="dynamixel_interface" type="dynamixel_interface_controller_node" output="screen">
