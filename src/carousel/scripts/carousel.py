@@ -23,9 +23,12 @@ class Carousel(StateMachine):
     outputs the desired end effector location and the gripper percentage open.
     """
 
-    def __init__(self, first : State, /):
+    def __init__(self, first : State, throw, /):
         """Create a new carousel logic controller instance."""
         super().__init__(first)
+
+        # Condition whether robot must throw block.
+        self._throw = throw
 
         # Dictionary of fiducial ID to ((x, y, z), yaw_to, yaw_of)
         self._cube : dict = {}
@@ -653,12 +656,21 @@ class ColourCheck(State):
             ros.loginfo(f'Cube colour is {colour}.')
             position = self.machine._dropoff[colour]
 
-            return State.Move(
-                position,
-                State.DropOff(),
-                velocity = 0.5,
-                pitch = -pi/2
-            )
+            if self.machine._throw == True:
+                return State.Move(
+                    position,
+                    State.Throw(),
+                    velocity = 0.6,
+                    pitch = -pi/2
+                    wait = False
+                )
+            else:
+                return State.Move(
+                    position,
+                    State.DropOff(),
+                    velocity = 0.5,
+                    pitch = -pi/2
+                )
 
 class DropOff(State):
 
@@ -685,6 +697,30 @@ class DropOff(State):
             pitch = pi/2
         )
 
+class Throw(State):
+
+    def main(self):
+        """main loop"""
+        ros.loginfo('Entered throw state.')
+        ros.loginfo('Opening gripper.')
+        percent = Float32()
+        percent.data = 1.0
+        self.machine._gripper_pub.publish(percent)
+        ros.sleep(0.1)
+
+        self.machine._colour_lock.acquire()
+        self.machine._colour_lock.release()
+
+        self.machine._cube.pop(self.machine._best_cube)
+
+        return State.Move(
+            self.machine._home_position,
+            State.Search(),
+            velocity = 0.5,
+            pitch = pi/2
+        )
+
 if __name__ == '__main__':
     ros.init_node('CarouselLogicNode')
-    Carousel(State.Search()).spin()
+    throw_cond = False
+    Carousel(State.Search(), throw=throw_cond).spin()

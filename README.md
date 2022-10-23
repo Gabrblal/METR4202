@@ -40,3 +40,21 @@ The following commands calibrate the camera.
 2. Copy calibration tar file into Desktop.
 3. Unzip / extract the folder.
 4. Move ost.yaml file into .ros/camera_info/ directory as ximea_SERIAL.yaml
+
+
+## Launching the robot carousel
+To launch the carousel file, first reset/disable the pigpio and camera by running:
+
+    source scripts/setup.bash
+
+Next, the carousel package can be launched along with source and build:
+
+    catkin build
+    source devel//setup.bash
+    roslaunch carousel carousel.launch
+
+This launch file launches the ximea camera package with the aruco detect file, the Dynamixel package and nodes relevant to the state machine
+
+## Credits
+The Ximea camera package "metr4202_ximea_ros" was taken from Miguel Valencia's github repo for METR4202, with
+some adjustments made to the ximea_ros package. The ximea_color package was strictly used 
