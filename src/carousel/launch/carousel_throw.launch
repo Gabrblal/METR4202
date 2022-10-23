@@ -32,6 +32,7 @@
 	<node name="carouselGripperNode" pkg="carousel" type="gripper.py" output="screen"></node>
 
 	<!-- Start the logic controller node last. -->
+	<param name="throw" type="bool" value="True"></param>\
 	<node name="carouselLogic" pkg="carousel" type="carousel.py" output="screen"></node>
 
 </launch>

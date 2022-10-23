@@ -4,10 +4,9 @@ class StateMachine:
     """An abstract state machine that loops through states, with each state
     returning the next state."""
 
-    def __init__(self, first, throw):
+    def __init__(self, first):
         """Initialises the sate machine with the first state, and throw condition."""
         self._state = first
-        self._throw = throw
 
     def spin(self):
         """Main loop of the state machine that iterates through states.

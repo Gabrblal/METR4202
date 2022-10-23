@@ -23,12 +23,24 @@ class Carousel(StateMachine):
     outputs the desired end effector location and the gripper percentage open.
     """
 
-    def __init__(self, first : State, throw, /):
-        """Create a new carousel logic controller instance."""
+    def __init__(
+            self,
+            first : State,
+            throw = False,
+            catch = False
+        ):
+        """Create a new carousel logic controller instance.
+
+        Args:
+            first: The first state of the carousel, usually State.Search().
+            throw: Whether to throw the cubes to their locations.
+            catch: Whether to attempt to catch the cubes as they rotate.
+        """
         super().__init__(first)
 
         # Condition whether robot must throw block.
         self._throw = throw
+        self._catch = catch
 
         # Dictionary of fiducial ID to ((x, y, z), yaw_to, yaw_of)
         self._cube : dict = {}
@@ -269,6 +281,10 @@ class Search(State):
 
             ros.loginfo(f'Selected cube {self.machine._best_cube}.')
 
+            # If catching is enabled, then catch.
+            if self.machine._catch:
+                return State.Catch()
+
             # Set the pickup position to 20mm above the cube.
             self.machine._cube_lock.acquire()
             position = self.machine._cube[self.machine._best_cube][0] 
@@ -276,6 +292,7 @@ class Search(State):
 
             ros.loginfo(f'Pickup position at {tuple(position)}.')
 
+            # Tune adjustment factors for distance to cube.
             if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
                 position = position + asarray([0, 0, 30])
                 pitch = -pi/4
@@ -287,20 +304,14 @@ class Search(State):
             yaw_to = self.machine._cube[self.machine._best_cube][1]
             self.machine._cube_lock.release()
 
-            # adj = yaw_to - pi/2
-            # if position[0] < 0:
-            #     adj += 5 * pi / 180
-            # else:
-            #     adj *= 1/15
+            # Tuning rotaton adjustment factor for left side.
+            if position[0] < 0:
+                adj = 2 * pi / 180
+                position[0] = position[0] * cos(adj) - position[1] * sin(adj)
+                position[1] = position[0] * sin(adj) + position[1] * cos(adj)
 
-            # ros.loginfo(f'Yaw adjustment: {adj}')
-            # position[0] = position[0] * cos(adj) - position[1] * sin(adj)
-            # position[1] = position[0] * sin(adj) + position[1] * cos(adj)
-            # ros.loginfo(f'Adjusted position: {position}')
-
-            # return State.Catch()
-            # return State.Track(position, yaw_to)
-            return State.Move(position, State.PickUp(), pitch = pitch)
+            # Default go to the pickup location.
+            return State.Move(position, State.PickUp(), velocity = 0.05, pitch = pitch)
 
 class Move(State):
     """State responsible for moving the end effector to a location and
@@ -473,7 +484,7 @@ class Track(State):
             position = position + asarray([0, 0, 20])
             pitch = -pi/4
         else:
-            position = position + asarray([0, 0, 20])
+            position = position + asarray([0, 0, 15])
             pitch = -pi/2 + pi/40
 
         # error = min([
@@ -619,7 +630,7 @@ class ColourCheck(State):
     def main(self):
         ros.loginfo('Entered colour checking state.')
 
-        timeout = ros.get_time() + 5
+        timeout = ros.get_time() + 3
 
         while not ros.is_shutdown():
             ros.sleep(0.01)
@@ -661,16 +672,16 @@ class ColourCheck(State):
                     position,
                     State.Throw(),
                     velocity = 0.6,
-                    pitch = -pi/2
+                    pitch = -pi/2,
                     wait = False
                 )
-            else:
-                return State.Move(
-                    position,
-                    State.DropOff(),
-                    velocity = 0.5,
-                    pitch = -pi/2
-                )
+
+            return State.Move(
+                position,
+                State.DropOff(),
+                velocity = 0.5,
+                pitch = -pi/2
+            )
 
 class DropOff(State):
 
@@ -729,5 +740,13 @@ if __name__ == '__main__':
 
     # Get whether the carousel will throw the cube.
     throw = ros.get_param('throw', False)
+    catch = ros.get_param('catch', False)
 
-    Carousel(State.Search(), throw = throw).spin()
+    ros.loginfo(f'Throwing is {throw}.')
+    ros.loginfo(f'Catching is {catch}.')
+
+    Carousel(
+        State.Search(),
+        throw = throw,
+        catch = catch
+    ).spin()

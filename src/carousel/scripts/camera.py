@@ -84,5 +84,5 @@ if __name__ == "__main__":
 
     Camera(
         camera_offset = [0, 200, -588],
-        cube_offset = [14, 14, 32]
+        cube_offset = [0, 14, 32]
     ).main()
