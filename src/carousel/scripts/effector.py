@@ -53,6 +53,6 @@ if __name__ == '__main__':
 
         effector_pub.publish(pose)
 
-    # Subscribe 
+    # Subscribe to the joint states and process 
     joint_sub = Topics.joint_states.subscriber(_callback)
     ros.spin()

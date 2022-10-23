@@ -702,13 +702,17 @@ class Throw(State):
     def main(self):
         """main loop"""
         ros.loginfo('Entered throw state.')
+
+        ros.sleep(0.2)
         ros.loginfo('Opening gripper.')
         percent = Float32()
         percent.data = 1.0
         self.machine._gripper_pub.publish(percent)
-        ros.sleep(0.1)
+
+        ros.sleep(0.2)
 
         self.machine._colour_lock.acquire()
+        colour = None
         self.machine._colour_lock.release()
 
         self.machine._cube.pop(self.machine._best_cube)
@@ -722,5 +726,8 @@ class Throw(State):
 
 if __name__ == '__main__':
     ros.init_node('CarouselLogicNode')
-    throw_cond = False
-    Carousel(State.Search(), throw=throw_cond).spin()
+
+    # Get whether the carousel will throw the cube.
+    throw = ros.get_param('throw', False)
+
+    Carousel(State.Search(), throw = throw).spin()
