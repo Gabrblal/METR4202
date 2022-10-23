@@ -10,7 +10,6 @@
 		<arg name="dictionary" value="0"/>
 	</include>
 
-
 	<!-- Start the colour node. -->
 	<node name="ColourNode" pkg="carousel" type="colour.py" output="screen"></node>
 
@@ -32,6 +31,8 @@
 	<node name="carouselGripperNode" pkg="carousel" type="gripper.py" output="screen"></node>
 
 	<!-- Start the logic controller node last. -->
+	<param name="throw" type="bool" value="False"></param>
+	<param name="catch" type="bool" value="False"></param>
 	<node name="carouselLogic" pkg="carousel" type="carousel.py" output="screen"></node>
 
 </launch>
