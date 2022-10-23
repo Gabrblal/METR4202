@@ -268,7 +268,9 @@ class Search(State):
 
             # If catching is enabled, then catch.
             if self.machine._catch:
-                self.machine._best_cube = self._desired_cube()
+                self.machine._cube_lock.acquire()
+                self.machine._best_cube = list(self.machine._cube.keys())[0]
+                self.machine._cube_lock.release()
                 return State.Catch()
 
             # Wait until the carousel has stopped.
@@ -475,7 +477,7 @@ class Catch(State):
         x, y, z = pos[0], pos[1], pos[2]
 
         # Radius away from the centre.
-        r = max(sqrt(x **2 + y ** 2) + 15, 230 / 2)
+        r = min(sqrt(x **2 + y ** 2) + 15, 230 / 2)
         ros.loginfo(f'r: {r}')
 
         x = self.machine._centre[0] + r * cos(yaw)
@@ -498,7 +500,7 @@ class Catch(State):
         for _, cube in self.machine._cube.items():
             x, y = cube[0][0], cube[0][1]
 
-            if y > self.machine._centre[1]:
+            if y > self.machine._centre[1] + 30:
                 continue
 
             if left and x > 20:
@@ -535,8 +537,8 @@ class Catch(State):
             self.machine._cube_lock.release()
 
             # If around the centre then just pick it up.
-            if abs(position[0] - self.machine._centre[0]) < 25:
-                if abs(position[1] - self.machine._centre[1]) < 25:
+            if abs(position[0] - self.machine._centre[0]) < 35:
+                if abs(position[1] - self.machine._centre[1]) < 35:
                     return State.Move(
                         position + asarray([0, 0, 20]),
                         State.PickUp(pitch = 0),
