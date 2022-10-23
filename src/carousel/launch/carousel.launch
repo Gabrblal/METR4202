@@ -25,8 +25,8 @@
 	<!-- Start the effector node. -->
 	<node name="carouselEffector" pkg="carousel" type="effector.py" output="screen"></node>
 
-	<!-- Start the trajectory generation node. -->
-    <node name="carouselTrajectory" pkg="carousel" type="trajectory.py" output="screen"></node>
+	<!-- Start the trajectory generation node.
+    <node name="carouselTrajectory" pkg="carousel" type="trajectory.py" output="screen"></node> -->
 
 	<!-- Start the gripper node. -->
 	<node name="carouselGripperNode" pkg="carousel" type="gripper.py" output="screen"></node>
