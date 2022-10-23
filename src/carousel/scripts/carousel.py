@@ -266,6 +266,11 @@ class Search(State):
             if no_cubes:
                 continue
 
+            # If catching is enabled, then catch.
+            if self.machine._catch:
+                self.machine._best_cube = self._desired_cube()
+                return State.Catch()
+
             # Wait until the carousel has stopped.
             if not self._has_stopped():
                 continue
@@ -281,10 +286,6 @@ class Search(State):
 
             ros.loginfo(f'Selected cube {self.machine._best_cube}.')
 
-            # If catching is enabled, then catch.
-            if self.machine._catch:
-                return State.Catch()
-
             # Set the pickup position to 20mm above the cube.
             self.machine._cube_lock.acquire()
             position = self.machine._cube[self.machine._best_cube][0] 
@@ -296,9 +297,11 @@ class Search(State):
             if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
                 position = position + asarray([0, 0, 30])
                 pitch = -pi/4
+                show_pitch = pi/4
             else:
                 position = position + asarray([0, -10, 25])
                 pitch = -pi/2 + pi/40
+                show_pitch = 0
 
             self.machine._cube_lock.acquire()
             yaw_to = self.machine._cube[self.machine._best_cube][1]
@@ -311,7 +314,12 @@ class Search(State):
                 position[1] = position[0] * sin(adj) + position[1] * cos(adj)
 
             # Default go to the pickup location.
-            return State.Move(position, State.PickUp(), velocity = 0.05, pitch = pitch)
+            return State.Move(
+                position,
+                State.PickUp(pitch = show_pitch),
+                velocity = 0.05,
+                pitch = pitch
+            )
 
 class Move(State):
     """State responsible for moving the end effector to a location and
@@ -467,7 +475,7 @@ class Catch(State):
         x, y, z = pos[0], pos[1], pos[2]
 
         # Radius away from the centre.
-        r = sqrt(x **2 + y ** 2) + 15
+        r = max(sqrt(x **2 + y ** 2) + 15, 230 / 2)
         ros.loginfo(f'r: {r}')
 
         x = self.machine._centre[0] + r * cos(yaw)
@@ -522,6 +530,20 @@ class Catch(State):
 
         if self._align:
 
+            self.machine._cube_lock.acquire()
+            position, _, _ = self.machine._cube[self.machine._best_cube]
+            self.machine._cube_lock.release()
+
+            # If around the centre then just pick it up.
+            if abs(position[0] - self.machine._centre[0]) < 25:
+                if abs(position[1] - self.machine._centre[1]) < 25:
+                    return State.Move(
+                        position + asarray([0, 0, 20]),
+                        State.PickUp(pitch = 0),
+                        velocity = 0.05,
+                        pitch = -pi/2 + pi/20
+                    )
+
             # Get the position to catch the cube at. Timeout may occur
             # when sampling rotation direction.
             catch_position = self._get_position()
@@ -570,14 +592,17 @@ class Catch(State):
                 continue
 
             moved = all(norm(d - recent[0]) < self.machine._movement_threshold for d in recent)
-            moved &= norm(self.machine._effector_position - position) < 50
+            moved &= norm(self.machine._effector_position - position) < 30
 
             # If all the recent positions are approximately equal.
             if moved:
-                return State.PickUp()
+                return State.PickUp(pitch = pi/2)
 
 class PickUp(State):
     """State responsible for picking up the cube."""
+
+    def __init__(self, pitch = pi / 4):
+        self._pitch = pitch
 
     def main(self):
         """main loop"""
@@ -594,7 +619,7 @@ class PickUp(State):
             self.machine._colour_check_position,
             State.ColourCheck(),
             velocity = 0.5,
-            pitch = pi / 4
+            pitch = self._pitch
         )
 
 class ColourCheck(State):
@@ -602,7 +627,7 @@ class ColourCheck(State):
     def main(self):
         ros.loginfo('Entered colour checking state.')
 
-        timeout = ros.get_time() + 3
+        timeout = ros.get_time() + 1
 
         while not ros.is_shutdown():
             ros.sleep(0.01)
