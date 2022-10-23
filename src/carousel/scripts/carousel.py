@@ -50,7 +50,7 @@ class Carousel(StateMachine):
         # Threshold to destination location before the end effector
         # has considered to be moved.
         self._joints = ('joint_1', 'joint_2', 'joint_3', 'joint_4')
-        self._movement_threshold = 15
+        self._movement_threshold = 5
 
         # Distance threshold in mm per rotation_wait in seconds below
         # which is considered stopped.
@@ -272,14 +272,14 @@ class Search(State):
             ros.loginfo(f'Pickup position at {tuple(position)}.')
 
             if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
-                position = position + asarray([0, 0, 20])
+                position = position + asarray([0, 0, 30])
                 pitch = -pi/4
             else:
-                position = position + asarray([0, -10, 15])
+                position = position + asarray([0, -10, 10])
                 pitch = -pi/2 + pi/40
 
             ros.loginfo(f'Pickup position at {tuple(position)}.')
-            # return State.Track()
+
             return State.Move(position, State.PickUp(), pitch = pitch)
 
 class Move(State):
@@ -290,6 +290,8 @@ class Move(State):
             self,
             position : ndarray,
             after_state : State,
+            *,
+            velocity : float = 1.0,
             pitch : float = None,
             wait : bool = True
         ):
@@ -297,14 +299,16 @@ class Move(State):
         
         Args:
             position: The position to move to.
-            pitch: The end effector pitch.
             after_state: The state to transition to after the move.
+            velocity: The percentage of maximum speed to move at.
+            pitch: The end effector pitch.
             wait: Whether to wait for the end effector to get to the desired location.
         """
         self._position = asarray(position).flatten()
         self._after_state = after_state
-        self._wait = wait
+        self._velocity = velocity
         self._pitch = pitch
+        self._wait = wait
 
     def main(self):
         return self.main_no_trajectory()
@@ -319,27 +323,30 @@ class Move(State):
         # Calculate the angles to get to the desired end effector position.
         theta = inverse_analytical_4R(self._position, carousel.L, self.machine._pitch)
 
+        vel = [self._velocity] * len(self.machine._joints)
+        ros.loginfo(f'Velocity: {vel}')
+
         self.machine._joint_pub.publish(
             JointState(
                 header = Header(stamp = ros.Time.now()),
                 name = self.machine._joints,
                 position = theta,
-                velocity = [1.0, 1.0, 1.0, 1.0]
+                velocity = vel
             )
         )
 
-        ros.sleep(0.2)
+        ros.sleep(0.1)
 
         # Skip the waiting if desired.
         if not self._wait:
             return self._after_state
 
         # Queue of recent differences in position.
-        recent = deque(maxlen = 3)
+        recent = deque(maxlen = 4)
 
         # Wait to get to the next position.
         while not ros.is_shutdown():
-            ros.sleep(0.1)
+            ros.sleep(0.02)
 
             self.machine._effector_lock.acquire()
 
@@ -355,92 +362,36 @@ class Move(State):
             if len(recent) != recent.maxlen:
                 continue
 
+            moved = all(norm(d - recent[0]) < self.machine._movement_threshold for d in recent)
+            moved &= norm(self.machine._effector_position - self._position) < 75
+
             # If all the recent positions are approximately equal.
-            if all(norm(d - recent[0]) < self.machine._movement_threshold for d in recent):
+            if moved:
                 ros.loginfo(f'Moved to {tuple(self._position)}!')
                 break
 
         return self._after_state
-
-class Track(State):
-    """State responsible for picking up the cube."""
-
-    def main(self):
-
-        # Get the position of the cube
-        self.machine._cube_lock.acquire()
-        position, yaw_to, yaw_of = self.machine._cube[self.machine._best_cube]
-        self.machine._cube_lock.release()
-
-        if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
-            position = position + asarray([0, 0, 20])
-            pitch = -pi/4
-        else:
-            position = position + asarray([0, 0, 20])
-            pitch = -pi/2 + pi/40
-
-        error = min([
-            abs(angle_wrap(yaw_to - yaw))
-            for yaw in (yaw_of, yaw_of + pi/2, yaw_of + pi, yaw_of + 3*pi/2)
-        ])
-
-        # If the yaw is fine to pick the cube up then pick it up.
-        # if error < self.machine._orientation_threshold:
-        #     return State.PickUp()
-
-        ros.loginfo('Orientation threshold not met.')
-
-        # Hover 30mm above the cube.
-        position = position # + asarray([0, -20, 30])
-
-        return State.Move(position, self, pitch = pitch, wait = False)
 
 class PickUp(State):
     """State responsible for picking up the cube."""
 
     def main(self):
         """main loop"""
-        # ros.loginfo(f'Entered pickup state at stage {self._stage}.')
+        ros.loginfo(f'Entered pickup state.')
 
         percent = Float32()
-
-        # if self._stage == 0:
-
-        #     # Open the gripper.
-        #     ros.loginfo(f'Opening gripper.')
-        #     percent.data = 1.0
-        #     self.machine._gripper_pub.publish(percent)
-
-        #     # Move down to put the cube inside the gripper.
-        #     self.machine._cube_lock.acquire()
-        #     position = self.machine._cube[self.machine._best_cube][0] + asarray([0, 0, 10])
-        #     self.machine._cube_lock.release()
-
-        #     # Perform the move and go to pickup stage 2.
-        #     return State.Move(position, PickUp(stage = 1))
-
-        # if self._stage == 1:
-
-        # Close the gripper and wait to close.
-        ros.loginfo(f'Closing gripper.')
         percent.data = 0.0
+
+        ros.loginfo(f'Closing gripper.')
         self.machine._gripper_pub.publish(percent)
-        ros.sleep(0.3)
+        ros.sleep(0.15)
 
-        # With the box move up out of the way of the other cubes.
-        # self.machine._effector_lock.acquire()
-        # position = self.machine._effector_position + asarray([0, 0, 40])
-        # self.machine._effector_lock.release()
-
-        # Move to the colour check position, and then check the colour.
-        # return State.Move(
-        #     position,
         return State.Move(
-                self.machine._colour_check_position,
-                State.ColourCheck(),
-                pitch = pi / 4
-            )
-        # )
+            self.machine._colour_check_position,
+            State.ColourCheck(),
+            velocity = 0.5,
+            pitch = pi / 4
+        )
 
 class ColourCheck(State):
 
@@ -470,6 +421,7 @@ class ColourCheck(State):
                 return State.Move(
                     self.machine._home_position,
                     State.Search(),
+                    velocity = 0.5,
                     pitch = pi/2
                 )
 
@@ -482,7 +434,13 @@ class ColourCheck(State):
 
             ros.loginfo(f'Cube colour is {colour}.')
             position = self.machine._dropoff[colour]
-            return State.Move(position, State.DropOff(), pitch = -pi/2)
+
+            return State.Move(
+                position,
+                State.DropOff(),
+                velocity = 0.5,
+                pitch = -pi/2
+            )
 
 class DropOff(State):
 
@@ -502,9 +460,13 @@ class DropOff(State):
 
         self.machine._cube.pop(self.machine._best_cube)
 
-        return State.Move(self.machine._home_position, State.Search(), pitch = pi/2)
+        return State.Move(
+            self.machine._home_position,
+            State.Search(),
+            velocity = 0.5,
+            pitch = pi/2
+        )
 
 if __name__ == '__main__':
     ros.init_node('CarouselLogicNode')
     Carousel(State.Search()).spin()
-    # Carousel(State.Search()).spin()

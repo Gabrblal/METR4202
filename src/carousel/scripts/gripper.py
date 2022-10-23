@@ -10,7 +10,7 @@ class CarouselGripper:
 
     def __init__(
             self,
-            minimum : int = 1280,
+            minimum : int = 1250,
             maximum : int = 1900,
             pin : int = 18,
             gripper_topic : str = 'carousel_gripper'

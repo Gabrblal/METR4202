@@ -1,13 +1,10 @@
 #! /usr/bin/env python
 
-import rospy
-import cv2
+import rospy as ros
 
 from utility.topics import Topics
-from sensor_msgs.msg import Image
-from std_msgs.msg import ColorRGBA, String
+from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
-
 
 class Colour:
 
@@ -43,7 +40,7 @@ class Colour:
         else:
             colour = "no block found"
 
-        # rospy.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
+        # ros.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
 
         # colour = ColorRGBA()
         # colour.r = r
@@ -52,17 +49,8 @@ class Colour:
         self._colour_pub.publish(colour)
 
     def main(self):
-        rospy.spin()
+        ros.spin()
 
 if __name__ == "__main__":
-    rospy.init_node('CarouselColourNode', anonymous=True)
+    ros.init_node('CarouselColourNode', anonymous=True)
     Colour().main()
-    # colour = Colour()
-    # try:
-    #     while not rospy.is_shutdown():
-    #         if colour._img is not None:
-    #             cv2.imshow("Image", colour._img)
-    #             cv2.waitKey(1)
-    # except KeyboardInterrupt:
-    #     print("shutting down")
-    # cv2.destroyAllWindows()

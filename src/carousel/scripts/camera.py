@@ -2,11 +2,11 @@
 
 import rospy as ros
 
+from typing import Tuple
 from numpy import asarray
-from numpy.linalg import 
 
 from fiducial_msgs.msg import FiducialTransformArray
-from utility.topics import Topics, Bool
+from utility.topics import Topics
 
 class Camera:
     """The camera node subscribes to the fiducial transformations and converts
@@ -49,7 +49,7 @@ class Camera:
         """
 
         # Get the fiducial transforms and do nothing if there are none.
-        transforms = list(data.transforms)
+        transforms = list(msg.transforms)
         if not transforms:
             return
 
