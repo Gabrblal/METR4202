@@ -7,6 +7,7 @@ from threading import Lock
 import rospy as ros
 
 from numpy import ndarray, asarray, arctan2, pi, vstack, subtract, average, sqrt
+from numpy import cos, sin
 from numpy.linalg import norm
 from scipy.spatial.transform import Rotation
 
@@ -45,6 +46,7 @@ class Carousel(StateMachine):
         self._pitch = -pi/4
 
         # Orientation error threshold for choosing a cube.
+        self._centre = asarray([0, 190, 0])
         self._orientation_threshold = 20 * pi / 180
 
         # Threshold to destination location before the end effector
@@ -54,8 +56,8 @@ class Carousel(StateMachine):
 
         # Distance threshold in mm per rotation_wait in seconds below
         # which is considered stopped.
-        self._rotation_wait = 1
-        self._rotation_threshold = 5 * pi / 180
+        self._rotation_wait = 0.4
+        self._rotation_threshold = 0.01 * pi / 180
 
         # Position to hold cube while checking its colour.
         self._colour_check_position = asarray([0, 170, 280])
@@ -250,10 +252,10 @@ class Search(State):
                 continue
 
             # Wait until the carousel has stopped.
-            if not self._has_stopped():
-                continue
+            # if not self._has_stopped():
+            #     continue
 
-            ros.loginfo('Guessed conveyor stopped.')
+            # ros.loginfo('Guessed conveyor stopped.')
 
             # Select the best cube.
             self.machine._best_cube = self._desired_cube()
@@ -275,11 +277,26 @@ class Search(State):
                 position = position + asarray([0, 0, 30])
                 pitch = -pi/4
             else:
-                position = position + asarray([0, -10, 10])
+                position = position + asarray([0, -10, 25])
                 pitch = -pi/2 + pi/40
 
-            ros.loginfo(f'Pickup position at {tuple(position)}.')
+            self.machine._cube_lock.acquire()
+            yaw_to = self.machine._cube[self.machine._best_cube][1]
+            self.machine._cube_lock.release()
 
+            # adj = yaw_to - pi/2
+            # if position[0] < 0:
+            #     adj += 5 * pi / 180
+            # else:
+            #     adj *= 1/15
+
+            # ros.loginfo(f'Yaw adjustment: {adj}')
+            # position[0] = position[0] * cos(adj) - position[1] * sin(adj)
+            # position[1] = position[0] * sin(adj) + position[1] * cos(adj)
+            # ros.loginfo(f'Adjusted position: {position}')
+
+            # return State.Catch()
+            # return State.Track(position, yaw_to)
             return State.Move(position, State.PickUp(), pitch = pitch)
 
 class Move(State):
@@ -371,6 +388,207 @@ class Move(State):
                 break
 
         return self._after_state
+
+class Track(State):
+
+    def __init__(self, position, yaw):
+        self._last_position = position
+        self._last_yaw = yaw
+
+    def _has_stopped(self): 
+        """Waits until the carousel has stopped.
+
+        Returns:
+            If the platform has stopped rotating.
+        """
+
+        # Select the first cube to track its change in yaw.
+        id = tuple(self.machine._cube.keys())[0]
+
+        self.machine._cube_lock.acquire()
+        yaw0 = self.machine._cube[id][2]
+        self.machine._cube_lock.release()
+
+        # Get the yaw of the cube at two different times.
+        ros.sleep(self.machine._rotation_wait)
+
+        self.machine._cube_lock.acquire()
+        yaw1 = self.machine._cube[id][2]
+        self.machine._cube_lock.release()
+
+        # Get the difference in yaw.
+        difference = angle_wrap(yaw0 - yaw1)
+
+        ros.loginfo(f'{yaw0} - {yaw1} = {difference} < {self.machine._rotation_threshold}')
+
+        # The platform has stopped if the yaw has approximately not changed.
+        return difference <= self.machine._rotation_threshold
+
+    def _predict(self, position, omega):
+        """Predict a future position based on the current yaw,
+        position and angluar velocity.
+
+        Args:
+            position: The position of the cube.
+            yaw: The yaw to the position.
+            omega: The angluar velocity of the cube.
+
+        Returns:
+            The future position of the cube.
+        """
+
+        # Position of the cube relative to the centre
+        pos = position - self.machine._centre
+        x, y, z = pos[0], pos[1], pos[2]
+
+        # Radius away from the centre.
+        r = sqrt(x **2 + y ** 2)
+
+        # Predicted yaw.
+        yaw = arctan2(y, x)
+        yaw += (pi / 4 * (omega > 0))
+        ros.loginfo(f'Omega: {omega} -> Yaw: {yaw}')
+
+        x = self.machine._centre[0] + r * cos(yaw)
+        y = self.machine._centre[1] + r * sin(yaw)
+
+        return asarray([x, y, z])
+
+    def main(self):
+
+        # Get the position of the cube
+        self.machine._cube_lock.acquire()
+        position, yaw_to, yaw_of = self.machine._cube[self.machine._best_cube]
+        self.machine._cube_lock.release()
+
+        # Angular velocity of the cube.
+        ros.sleep(0.5)
+        omega = (yaw_to - self._last_yaw) / 0.5
+        self._last_yaw = yaw_to
+
+        if norm(position[0:2]) > carousel.L[1] + carousel.L[2]:
+            position = position + asarray([0, 0, 20])
+            pitch = -pi/4
+        else:
+            position = position + asarray([0, 0, 20])
+            pitch = -pi/2 + pi/40
+
+        # error = min([
+        #     abs(angle_wrap(yaw_to - yaw))
+        #     for yaw in (yaw_of, yaw_of + pi/2, yaw_of + pi, yaw_of + 3*pi/2)
+        # ])
+
+        # If the yaw is fine to pick the cube up then pick it up.
+        # if error < self.machine._orientation_threshold:
+        #     return State.Move(position, State.PickUp(), pitch = pitch)
+
+        # ros.loginfo('Orientation threshold not met.')
+
+        if self._has_stopped():
+            return State.Move(position, State.PickUp(), pitch = pitch)
+
+        # Predict the position of the cube.
+        position = self._predict(position, omega) #  + asarray([0, -70, 30])
+
+        return State.Move(position, self, pitch = pitch, wait = False)
+
+class Catch(State):
+
+    def __init__(self, align = True):
+        self._align = align
+
+    def _get_position(self):
+
+        # True for positive rotation, False for negative rotation.
+        yaw = None
+
+        # Recent rotation samples.
+        recent = []
+
+        # Calculate the angular direction of the conveyor.
+        while True:
+
+            # Get the position of the cube
+            self.machine._cube_lock.acquire()
+            position, _, yaw0 = self.machine._cube[self.machine._best_cube]
+            self.machine._cube_lock.release()
+
+            # Angular velocity of the cube.
+            ros.sleep(0.5)
+
+            self.machine._cube_lock.acquire()
+            _, _, yaw1 = self.machine._cube[self.machine._best_cube]
+            self.machine._cube_lock.release()
+
+            if yaw0 > pi / 2 and yaw1 < -pi / 2:
+                yaw1 += 2 * pi
+            elif yaw0 < -pi / 2 and yaw1 > pi / 2:
+                yaw1 -= 2 * pi
+
+            ros.loginfo(f'{yaw0} > {yaw1}')
+
+            # True if increasing in angle.
+            recent.append(yaw0 > yaw1)
+
+            if len(recent) >= 3:
+
+                # Positive rotation around z.
+                if all(x == True for x in recent):
+                    yaw = pi
+
+                # Negative rotation around z.
+                elif all(x == False for x in recent):
+                    yaw = 0
+
+                # Undetermined.
+                else:
+                    recent.clear()
+                    continue
+
+                break
+
+        # Position of the cube relative to the centre
+        pos = position - self.machine._centre
+        x, y, z = pos[0], pos[1], pos[2]
+
+        # Radius away from the centre.
+        r = sqrt(x **2 + y ** 2) + 15
+        ros.loginfo(f'r: {r}')
+
+        x = self.machine._centre[0] + r * cos(yaw)
+        y = self.machine._centre[1] + 20
+        z += 20
+
+        return asarray([x, y, z])
+
+    def main(self):
+
+        if self._align:
+            return State.Move(self._get_position(), State.Catch(align = False), pitch = 0)
+
+        # Queue of recent differences in position.
+        recent = deque(maxlen = 4)
+
+        # Wait to get to the next position.
+        while not ros.is_shutdown():
+            ros.sleep(0.1)
+
+            self.machine._cube_lock.acquire()
+            position, _, _ = self.machine._cube[self.machine._best_cube]
+            self.machine._cube_lock.release()
+
+            # Get the current end effector position.
+            recent.append(position)
+
+            if len(recent) != recent.maxlen:
+                continue
+
+            moved = all(norm(d - recent[0]) < self.machine._movement_threshold for d in recent)
+            moved &= norm(self.machine._effector_position - position) < 50
+
+            # If all the recent positions are approximately equal.
+            if moved:
+                return State.PickUp()
 
 class PickUp(State):
     """State responsible for picking up the cube."""
