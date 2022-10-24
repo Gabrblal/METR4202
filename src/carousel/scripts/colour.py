@@ -7,8 +7,13 @@ from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 
 class Colour:
+    """ Colour node.
+
+    Responsible for determining the colour based on rgb values received from centre pixel of screen
+    """
 
     def __init__(self):
+        # initialise with colour subscriber and publisher
         self.bridge = CvBridge()
         self._colour_pub = Topics.block_colour.publisher()
         self._colour_sub = Topics.colour_info.subscriber(self._callback)
@@ -27,6 +32,7 @@ class Colour:
         g = bgr[1]
         b = bgr[0]
 
+        # check through each threshold to ensure correct colour is found
         colour = String
         if r > 150 and b < 100:
             if g > 150:
@@ -40,12 +46,6 @@ class Colour:
         else:
             colour = "no block found"
 
-        # ros.loginfo(f'\n red: {r} \n green: {g} \n blue: {b} \n colour: {colour}')
-
-        # colour = ColorRGBA()
-        # colour.r = r
-        # colour.g = g
-        # colour.b = b
         self._colour_pub.publish(colour)
 
     def main(self):

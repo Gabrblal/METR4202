@@ -1,0 +1,3 @@
+This software includes third party open source software components: Ximea,
+Dynamixel, and OpenCV. Each of these software components have their own license.
+Please see XimeaLicense.txt, DynmixelLicense.txt, and OpenCVLicense.txt.

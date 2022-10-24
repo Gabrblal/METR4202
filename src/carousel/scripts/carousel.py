@@ -106,6 +106,7 @@ class Carousel(StateMachine):
         """
         self._effector_lock.acquire()
 
+        # Extract the end effector location.
         p = data.position
         self._effector_position = asarray([(p.x, p.y, p.z)])
 
@@ -152,14 +153,14 @@ class Carousel(StateMachine):
 
 class Search(State):
     """The search state is responible for selecting a cube to pickup.
-    
+
     Chooses cubes that have an orientation matching the end effector
     when attempting to pickup, and selects the cube furthest away
     from the cube cluster centre.
     """
 
     def _has_stopped(self): 
-        """Waits until the carousel has stopped.
+        """Check if the carousel has stopped moving.
 
         Returns:
             If the platform has stopped rotating.
@@ -305,10 +306,6 @@ class Search(State):
                 pitch = -pi/2 + pi/40
                 show_pitch = 0
 
-            self.machine._cube_lock.acquire()
-            yaw_to = self.machine._cube[self.machine._best_cube][1]
-            self.machine._cube_lock.release()
-
             # Tuning rotaton adjustment factor for left side.
             if position[0] < 0:
                 adj = 2 * pi / 180
@@ -325,7 +322,7 @@ class Search(State):
 
 class Move(State):
     """State responsible for moving the end effector to a location and
-    then transitioning to the state afterwards."""
+    then transitioning to the state following."""
 
     def __init__(
             self,
@@ -337,7 +334,7 @@ class Move(State):
             wait : bool = True
         ):
         """Create the movement state temporary data.
-        
+
         Args:
             position: The position to move to.
             after_state: The state to transition to after the move.
@@ -367,6 +364,7 @@ class Move(State):
         vel = [self._velocity] * len(self.machine._joints)
         ros.loginfo(f'Velocity: {vel}')
 
+        # Set the joint angles to achieve the desired location.
         self.machine._joint_pub.publish(
             JointState(
                 header = Header(stamp = ros.Time.now()),
@@ -403,6 +401,8 @@ class Move(State):
             if len(recent) != recent.maxlen:
                 continue
 
+            # Moved if in the same position for however many samples and
+            # approximately within the correct end effector area.
             moved = all(norm(d - recent[0]) < self.machine._movement_threshold for d in recent)
             moved &= norm(self.machine._effector_position - self._position) < 75
 
@@ -414,12 +414,29 @@ class Move(State):
         return self._after_state
 
 class Catch(State):
+    """Alternative to the pickup state that waits for the cube to rotate into
+    the gripper if away from the centre, and pick it up normally if around the
+    centre of the platform.
+    """
 
     def __init__(self, align = True):
+        """Create a new catch state.
+        
+        Args:
+            align: Whether to align the gripper or to try and pick the
+                selected cube up.
+        """
         self._align = align
         self._timeout = ros.get_time() + 15
 
     def _get_position(self):
+        """Determines the position that the gripper must wait at for the cube
+        to rotate into the gripper.
+    
+        Returns:
+            The position to wait for the cube, or None on timeout figuring out
+            the direction of rotation.
+        """
 
         # True for positive rotation, False for negative rotation.
         yaw = None
@@ -433,7 +450,7 @@ class Catch(State):
             if ros.get_time() > self._timeout:
                 return None
 
-            # Get the position of the cube
+            # Get the yaw of the cube before.
             self.machine._cube_lock.acquire()
             position, _, yaw0 = self.machine._cube[self.machine._best_cube]
             self.machine._cube_lock.release()
@@ -441,10 +458,13 @@ class Catch(State):
             # Angular velocity of the cube.
             ros.sleep(0.5)
 
+            # Get the yaw of the cube after.
             self.machine._cube_lock.acquire()
             _, _, yaw1 = self.machine._cube[self.machine._best_cube]
             self.machine._cube_lock.release()
 
+            # If the yaw has a discontinuity then adjust the second yaw to the
+            # same sign as the first.
             if yaw0 > pi / 2 and yaw1 < -pi / 2:
                 yaw1 += 2 * pi
             elif yaw0 < -pi / 2 and yaw1 > pi / 2:
@@ -480,6 +500,7 @@ class Catch(State):
         r = min(sqrt(x **2 + y ** 2) + 15, 230 / 2)
         ros.loginfo(f'r: {r}')
 
+        # Pickup location is along the x axis at y + 20mm.
         x = self.machine._centre[0] + r * cos(yaw)
         y = self.machine._centre[1] + 20
         z += 20
@@ -491,30 +512,42 @@ class Catch(State):
 
         Args:
             left: True to check the left side or False for the right.
-        
+
         Returns:
             True if the area is clear.
         """
         self.machine._cube_lock.acquire()
 
+        # For each cube, if the 
         for _, cube in self.machine._cube.items():
             x, y = cube[0][0], cube[0][1]
-
+            
+            # If the cube is outside of the lower left and right quadrants then
+            # this cube is okay.
             if y > self.machine._centre[1] + 30:
                 continue
-
+            
+            # If the cube is not in the selected quadrant then this cube is
+            # okay.
             if left and x > 20:
                 continue
             elif not left and x < -20:
                 continue
 
+            # Otherwise this cube is conflicting with the pickup pose.
             self.machine._cube_lock.release()
             return False
 
+        # No cubes conflicting with the pickup pose.
         self.machine._cube_lock.release()
         return True
 
     def _on_timeout(self):
+        """On timeout remove the cube locked onto and go to the search state.
+
+        Returns:
+            A movement state to the home position followed by the search state.
+        """
         # Remove the tracked cube.
         self.machine._cube_lock.acquire()
         self.machine._cube.pop(self.machine._best_cube)
@@ -529,6 +562,12 @@ class Catch(State):
         )
 
     def main(self):
+        """Main loop for catch state.
+
+        Determines the position of the cube. If the position is in the centre
+        then attempts to pick it up normally. Otherwise gets the position of
+        the cube and waits for it to enter the gripper on a timeout.
+        """
 
         if self._align:
 
@@ -593,6 +632,8 @@ class Catch(State):
             if len(recent) != recent.maxlen:
                 continue
 
+            # Moved if all positions are roughly equal and the end effector
+            # position is within range.
             moved = all(norm(d - recent[0]) < self.machine._movement_threshold for d in recent)
             moved &= norm(self.machine._effector_position - position) < 30
 
@@ -604,10 +645,17 @@ class PickUp(State):
     """State responsible for picking up the cube."""
 
     def __init__(self, pitch = pi / 4):
+        """Create a new pickup state.
+
+        Args:
+            pitch: The pitch of the end effector to pickup with.
+        """
         self._pitch = pitch
 
     def main(self):
-        """main loop"""
+        """Main loop of the pickup state. Closest the tripper and moves to the
+        check colour state.
+        """
         ros.loginfo(f'Entered pickup state.')
 
         percent = Float32()
@@ -617,6 +665,7 @@ class PickUp(State):
         self.machine._gripper_pub.publish(percent)
         ros.sleep(0.15)
 
+        # Go to the colour checking position and perform a colour check.
         return State.Move(
             self.machine._colour_check_position,
             State.ColourCheck(),
@@ -625,8 +674,19 @@ class PickUp(State):
         )
 
 class ColourCheck(State):
+    """State responsible for checking the colour of a cube."""
 
     def main(self):
+        """Main loop for colour checking.
+
+        Waits for the colour variable of the state machine to read a colour
+        with a timeout.
+
+        Returns:
+            Movement state to the home position followed by the search state on
+            colour checking timeout, or movement state to the dropoff location
+            followed by the dropoff state.
+        """
         ros.loginfo('Entered colour checking state.')
 
         timeout = ros.get_time() + 1
@@ -647,8 +707,10 @@ class ColourCheck(State):
                 colour = None
                 self.machine._colour_lock.release()
 
+                # Stop tracking this cube.
                 self.machine._cube.pop(self.machine._best_cube)
 
+                # Move to the home position and resume searching.
                 return State.Move(
                     self.machine._home_position,
                     State.Search(),
@@ -656,16 +718,22 @@ class ColourCheck(State):
                     pitch = pi/2
                 )
 
+            # Get the current colour.
             self.machine._colour_lock.acquire()
             colour = self.machine._colour
             self.machine._colour_lock.release()
 
+            # If the colour is unrecognised then continue waiting.
             if colour not in self.machine._dropoff.keys():
                 continue
 
             ros.loginfo(f'Cube colour is {colour}.')
+
+            # Get the dropoff location of for that colour cube.
             position = self.machine._dropoff[colour]
 
+            # If throwing then go to the movement state and immediately go
+            # to the throw state without waiting for the movement to complete.
             if self.machine._throw == True:
                 return State.Move(
                     position,
@@ -675,6 +743,7 @@ class ColourCheck(State):
                     wait = False
                 )
 
+            # Move to the dropoff position and go to the dropoff state.
             return State.Move(
                 position,
                 State.DropOff(),
@@ -683,9 +752,19 @@ class ColourCheck(State):
             )
 
 class DropOff(State):
+    """State responsible for dropping off the currently gripped cube."""
 
     def main(self):
-        """main loop"""
+        """Main loop of the dropoff state.
+
+        Assumes the end effector is at the dropoff location.
+
+        Opens the gripper and removes currently tracked cube from the
+        registered cubes.
+
+        Returns:
+            A movement state to the home position followed by the search state.
+        """
         ros.loginfo('Entered drop off state.')
 
         ros.loginfo(f'Opening gripper.')
@@ -694,12 +773,12 @@ class DropOff(State):
         self.machine._gripper_pub.publish(percent)
         ros.sleep(0.5)
 
-        self.machine._colour_lock.acquire()
-        colour = None
-        self.machine._colour_lock.release()
-
+        # Untrack the cube.
+        self.machine._cube_lock.acquire()
         self.machine._cube.pop(self.machine._best_cube)
+        self.machine._cube_lock.release()
 
+        # Go to the home position and continue searching for cubes.
         return State.Move(
             self.machine._home_position,
             State.Search(),
@@ -708,23 +787,35 @@ class DropOff(State):
         )
 
 class Throw(State):
+    """Alternative to the dropoff state that throws the cube."""
 
     def main(self):
-        """main loop"""
+        """Main loop of the throw state.
+        
+        Opens the gripper prematurely after a delay from the previous movement
+        state, and then resumes searching.
+        
+        Returns:
+            """
         ros.loginfo('Entered throw state.')
 
+        # Add a small delay before releasing the cube.
         ros.sleep(0.2)
+
         ros.loginfo('Opening gripper.')
         percent = Float32()
         percent.data = 1.0
         self.machine._gripper_pub.publish(percent)
 
+        # Add a small delay after releasing the cube.
         ros.sleep(0.2)
 
+        # Untrack the cube.
         self.machine._cube_lock.acquire()
         self.machine._cube.pop(self.machine._best_cube)
         self.machine._cube_lock.release()
 
+        # Go to the home position and continue searching.
         return State.Move(
             self.machine._home_position,
             State.Search(),
@@ -742,6 +833,7 @@ if __name__ == '__main__':
     ros.loginfo(f'Throwing is {throw}.')
     ros.loginfo(f'Catching is {catch}.')
 
+    # Start the carousel from the searching state.
     Carousel(
         State.Search(),
         throw = throw,

@@ -41,20 +41,42 @@ The following commands calibrate the camera.
 3. Unzip / extract the folder.
 4. Move ost.yaml file into .ros/camera_info/ directory as ximea_SERIAL.yaml
 
+## Dependancies
 
-## Launching the robot carousel
-To launch the carousel file, first reset/disable the pigpio and camera by running:
+Upon booting a new pi, the following dependancies must be installed:
 
-    source scripts/setup.bash
+    pip install:
+        scipy
+        numpy
+        rospy
+        pigpio
+        opencv
+        
 
-Next, the carousel package can be launched along with source and build:
+## Launching
+Each time the pi is booted the usb memory limits must be disabled and the
+gpio daemon started, that is performed with the `setup.bash` script. Run
+
+    ./scripts/setup.bash
+
+When first initialising the carousel package must be built with
 
     catkin build
-    source devel//setup.bash
-    roslaunch carousel carousel.launch
 
-This launch file launches the ximea camera package with the aruco detect file, the Dynamixel package and nodes relevant to the state machine
+The package defines 3 launch files for starting the robot arm.
+1. `carousel.launch` waits for the cubes to stop in place before picking them up.
+2. `carousel_throw.launch` waits for the cubes to stop in place, and throws them towards their dropoff locations.
+3. `carousel_catch.launch` lets the cubes rotate into the gripper before placing them in their dropoff locations.
 
-## Credits
+Any of these can be launched where `<launch_file>` is replaced with the above
+filenames with
+
+    source devel/setup.bash && roslaunch carousel <launch_file>
+
+These launch files start the ximea camera package with the aruco detect file,
+the dynamixel package and nodes required for the statemachine and supporting
+data transformation and publishing.
+
+## Credits & References.
 The Ximea camera package "metr4202_ximea_ros" was taken from Miguel Valencia's github repo for METR4202, with
 some adjustments made to the ximea_ros package. The ximea_color package was strictly used 
