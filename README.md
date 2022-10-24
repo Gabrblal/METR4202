@@ -43,15 +43,14 @@ The following commands calibrate the camera.
 
 ## Dependancies
 
-Upon booting a new pi, the following dependancies must be installed:
+The ximea and dynamixel packages can be downloaded with the configuration
+script
 
-    pip install:
-        scipy
-        numpy
-        rospy
-        pigpio
-        opencv
-        
+    ./scripts/configure.bash
+
+The following python library dependancies must be installed:
+
+    pip install scipy numpy rospy pigpio opencv
 
 ## Launching
 Each time the pi is booted the usb memory limits must be disabled and the
@@ -78,5 +77,7 @@ the dynamixel package and nodes required for the statemachine and supporting
 data transformation and publishing.
 
 ## Credits & References.
-The Ximea camera package "metr4202_ximea_ros" was taken from Miguel Valencia's github repo for METR4202, with
-some adjustments made to the ximea_ros package. The ximea_color package was strictly used 
+The Ximea camera package "metr4202_ximea_ros" was taken from Miguel Valencia's
+github repo for METR4202, with some adjustments made to the ximea_ros package.
+
+The repository can be found at https://github.com/Gabrblal/METR4202
